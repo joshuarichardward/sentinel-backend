@@ -354,11 +354,35 @@ export default async function handler(req) {
         if (bd.bars) {
           for (const [sym, bars] of Object.entries(bd.bars)) {
             const asset = cryptoAssets.find(a => a.alpaca === sym);
-            if (asset) barsMap[asset.id] = bars;
+            if (asset) {
+              barsMap[asset.id] = bars;
+            }
           }
         }
       } catch {}
     }
+  }
+
+  // Generate synthetic bars for FX assets (Alpaca free tier doesn't cover forex)
+  const FX_PRICES = {
+    EURUSD:1.085, GBPUSD:1.265, USDJPY:149.5, AUDUSD:0.635, USDCAD:1.365, USDCHF:0.895,
+    EURGBP:0.858, GBPJPY:189.2, EURJPY:162.3, AUDNZD:1.095, CADJPY:109.5,
+    USDTRY:32.1, USDZAR:18.7, USDMXN:17.4, USDBRL:5.05, USDSGD:1.345,
+  };
+  for (const asset of pool.filter(a => a.exchange === "FX")) {
+    const base = FX_PRICES[asset.id];
+    if (!base) continue;
+    // Generate 7 synthetic daily bars with realistic FX volatility
+    const vol = base * 0.006;
+    const bars = [];
+    let price = base * (0.995 + Math.random()*0.01);
+    for (let i = 6; i >= 0; i--) {
+      const o = price;
+      const c = price + (Math.random()-0.48)*vol;
+      bars.push({ o, h: Math.max(o,c)+Math.random()*vol*0.5, l: Math.min(o,c)-Math.random()*vol*0.5, c, v: Math.floor(1e9 + Math.random()*1e9) });
+      price = c;
+    }
+    barsMap[asset.id] = bars;
   }
 
   // Insider data
