@@ -1,4 +1,4 @@
-export const config = { runtime: 'edge' };
+export const config = { runtime: 'edge' }; // v2
 
 // ── EXPANDED UNIVERSE (120+ stocks) ──────────────────────────────────────────
 const UNIVERSE = [
