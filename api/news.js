@@ -1,11 +1,6 @@
 export const config = { runtime: 'edge' };
 
 export default async function handler(req) {
-  const allowedOrigins = ['http://localhost:3000', 'https://sentinel.vercel.app'];
-  const origin = req.headers.get('origin') || '';
-  const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-
-  // Handle preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -16,55 +11,52 @@ export default async function handler(req) {
     });
   }
 
-  const apiKey = process.env.NEWS_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'NEWS_API_KEY not set' }), {
+  const apiKey    = process.env.ALPACA_API_KEY;
+  const apiSecret = process.env.ALPACA_API_SECRET;
+
+  if (!apiKey || !apiSecret) {
+    return new Response(JSON.stringify({ error: 'Alpaca credentials not set' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
-  // Financial news queries — rotated to stay within rate limits
-  const queries = [
-    'forex OR "currency" OR "interest rates" OR "central bank"',
-    'cryptocurrency OR bitcoin OR ethereum OR altcoin',
-    'stocks OR "earnings" OR "options" OR "short squeeze"',
-    '"emerging markets" OR "commodities" OR "oil" OR "gold"',
-  ];
-  const q = queries[Math.floor(Math.random() * queries.length)];
-
-  const sources = 'bloomberg,reuters,the-wall-street-journal,financial-times,cnbc,business-insider';
-  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&sources=${sources}&pageSize=20&sortBy=publishedAt&language=en&apiKey=${apiKey}`;
+  // Alpaca news endpoint — pulls latest 30 financial news articles
+  const url = 'https://data.alpaca.markets/v1beta1/news?limit=30&sort=desc&symbols=AAPL,NVDA,TSLA,BTC/USD,ETH/USD,MSFT,AMZN,SPY,QQQ,GLD';
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: {
+        'APCA-API-KEY-ID':     apiKey,
+        'APCA-API-SECRET-KEY': apiSecret,
+        'Accept': 'application/json',
+      },
+    });
+
     const data = await res.json();
 
-    if (data.status !== 'ok') {
-      return new Response(JSON.stringify({ error: data.message || 'NewsAPI error' }), {
+    if (!data.news) {
+      return new Response(JSON.stringify({ error: 'No news returned', raw: data }), {
         status: 502,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
 
-    // Clean and tag articles
-    const articles = (data.articles || [])
-      .filter(a => a.title && a.title !== '[Removed]')
-      .map(a => ({
-        id: a.url,
-        h: a.title,
-        src: a.source?.name || 'Unknown',
-        url: a.url,
-        ts: new Date(a.publishedAt).getTime(),
-        bias: classifyBias(a.title + ' ' + (a.description || '')),
-      }));
+    const articles = data.news.map(item => ({
+      id:   item.id?.toString() || item.url,
+      h:    item.headline,
+      src:  item.source || 'Alpaca News',
+      url:  item.url,
+      ts:   new Date(item.created_at).getTime(),
+      bias: classifyBias(item.headline + ' ' + (item.summary || '')),
+    }));
 
     return new Response(JSON.stringify({ articles }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 's-maxage=120, stale-while-revalidate=60',
+        'Cache-Control': 's-maxage=60, stale-while-revalidate=30',
       },
     });
   } catch (err) {
@@ -75,13 +67,12 @@ export default async function handler(req) {
   }
 }
 
-// Simple rule-based sentiment classifier
 function classifyBias(text) {
   const t = text.toLowerCase();
   const bullish = ['surges','jumps','gains','rises','beats','record','high','rally','boosts',
-    'approval','upgrade','bullish','inflows','strong','growth','wins','expands'];
+    'approval','upgrade','bullish','inflows','strong','growth','wins','expands','soars','spikes'];
   const bearish = ['falls','drops','slips','plunges','warns','misses','low','selloff','crash',
-    'cut','downgrade','bearish','outflows','weak','decline','loses','shrinks','risk','fears'];
+    'cut','downgrade','bearish','outflows','weak','decline','loses','shrinks','risk','fears','tumbles'];
   let score = 0;
   bullish.forEach(w => { if (t.includes(w)) score++; });
   bearish.forEach(w => { if (t.includes(w)) score--; });
