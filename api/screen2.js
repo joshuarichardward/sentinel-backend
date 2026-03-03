@@ -418,13 +418,15 @@ export default async function handler(req) {
         const last = bars[bars.length-1].c;
         const prev = bars[bars.length-4].c;
         const pct  = Math.abs((last-prev)/prev*100);
-        if (pct >= 2) edges.push({ name:"MOMENTUM", detail:`${pct.toFixed(1)}% move in 3 bars`, strength: pct >= 5 ? 2 : 1 });
+        const strength = pct >= 5 ? 2 : 1;
+        edges.push({ name:"MOMENTUM", detail:`${pct.toFixed(1)}% move — ${last > prev ? "bullish" : "bearish"}`, strength });
+      } else {
+        // No bars — still include with a base momentum edge
+        edges.push({ name:"MOMENTUM", detail:"Price action monitored", strength:1 });
       }
-      // Always include FX/CR if strong news exists
-      if (newsCat.found && edges.length >= 1) {
-        signals.push(buildSignal(asset, edges, bars, assetNews));
-        continue;
-      }
+      // Always push FX/CR signals — they have their own volatility profile
+      signals.push(buildSignal(asset, edges, bars, assetNews));
+      continue;
     }
 
     if (edges.length >= 2) signals.push(buildSignal(asset, edges, bars, assetNews));
