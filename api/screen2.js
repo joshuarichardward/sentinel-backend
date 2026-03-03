@@ -453,7 +453,7 @@ export default async function handler(req) {
 
   return new Response(JSON.stringify({ signals:final, scored:final.length, universe:pool.length, ts:Date.now() }), {
     status:200,
-    headers:{ "Content-Type":"application/json","Access-Control-Allow-Origin":"*","'Cache-Control': 'no-store'" },
+    headers:{ "Content-Type":"application/json","Access-Control-Allow-Origin":"*","Cache-Control":"no-store" },
   });
 }
 
