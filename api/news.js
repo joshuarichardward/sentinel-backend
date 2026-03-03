@@ -22,7 +22,11 @@ export default async function handler(req) {
   }
 
   // Alpaca news endpoint — pulls latest 30 financial news articles
-  const url = 'https://data.alpaca.markets/v1beta1/news?limit=30&sort=desc&symbols=AAPL,NVDA,TSLA,BTC/USD,ETH/USD,MSFT,AMZN,SPY,QQQ,GLD';
+  // Broad symbol list triggers wider news coverage from all Alpaca sources
+  // (Benzinga, Reuters, MT Newswires, Seeking Alpha, GlobeNewswire etc)
+  const stockSyms  = "AAPL,NVDA,TSLA,MSFT,AMZN,MARA,RIOT,COIN,MSTR,SMCI,IONQ,RGTI,RKLB,SOUN,UPST,AFRM,SOFI,BBAI,QBTS,ASTS,ACHR,JOBY,PLUG,FCEL,BLNK,NIO,XPEV,SAVA,OCGN,NKLA,MULN,SPY,QQQ,GLD,USO";
+  const cryptoSyms = "BTC/USD,ETH/USD,SOL/USD,DOGE/USD,AVAX/USD,LINK/USD,MATIC/USD,BNB/USD";
+  const url = `https://data.alpaca.markets/v1beta1/news?limit=50&sort=desc&symbols=${encodeURIComponent(stockSyms + "," + cryptoSyms)}`;
 
   try {
     const res = await fetch(url, {
