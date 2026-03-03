@@ -226,16 +226,8 @@ export default async function handler(req) {
 
   const apiKey=process.env.ALPACA_API_KEY, apiSecret=process.env.ALPACA_API_SECRET;
 
-  // Single fast news fetch — the only external call
+  // No external calls — news injected from cache (fast)
   let allNews=[];
-  try {
-    const syms=UNIVERSE.filter(a=>a.type==="stock").map(a=>a.id).slice(0,20).join(",");
-    const r=await fetch(
-      `https://data.alpaca.markets/v1beta1/news?limit=30&sort=desc&symbols=${encodeURIComponent(syms+",BTC/USD,ETH/USD")}`,
-      {headers:{"APCA-API-KEY-ID":apiKey,"APCA-API-SECRET-KEY":apiSecret},signal:AbortSignal.timeout(5000)}
-    );
-    allNews=(await r.json()).news||[];
-  } catch {}
 
   // Run Wyckoff on all assets using synthetic bars (instant, no API needed)
   const signals=[], seen=new Set();
