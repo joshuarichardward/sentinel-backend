@@ -123,6 +123,45 @@ const UNIVERSE = [
   { id:"BITF",  name:"Bitfarms",          sector:"BTC Miner",  float:95,   shortPct:14, tier:2, exchange:"US" },
   { id:"HIVE",  name:"HIVE Digital",      sector:"BTC Miner",  float:45,   shortPct:12, tier:3, exchange:"US" },
   { id:"WULF",  name:"TeraWulf",          sector:"BTC Miner",  float:55,   shortPct:18, tier:3, exchange:"US" },
+
+  // ── CRYPTO MAJORS ─────────────────────────────────────────────────────────
+  { id:"BTCUSD", name:"BTC/USD",   sector:"Crypto Major", float:999, shortPct:0, tier:1, exchange:"CR", alpaca:"BTC/USD" },
+  { id:"ETHUSD", name:"ETH/USD",   sector:"Crypto Major", float:999, shortPct:0, tier:1, exchange:"CR", alpaca:"ETH/USD" },
+  { id:"SOLUSD", name:"SOL/USD",   sector:"Crypto Major", float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"SOL/USD" },
+  { id:"BNBUSD", name:"BNB/USD",   sector:"Crypto Major", float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"BNB/USD" },
+
+  // ── CRYPTO MID-CAPS ───────────────────────────────────────────────────────
+  { id:"AVAXUSD", name:"AVAX/USD", sector:"Crypto Mid",   float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"AVAX/USD" },
+  { id:"LINKUSD", name:"LINK/USD", sector:"Crypto Mid",   float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"LINK/USD" },
+  { id:"DOTUSD",  name:"DOT/USD",  sector:"Crypto Mid",   float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"DOT/USD"  },
+  { id:"MATICUSD",name:"MATIC/USD",sector:"Crypto Mid",   float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"MATIC/USD"},
+
+  // ── CRYPTO SMALL / MEME ───────────────────────────────────────────────────
+  { id:"PEPEUSD", name:"PEPE/USD", sector:"Meme Coin",    float:999, shortPct:0, tier:3, exchange:"CR", alpaca:"PEPE/USD" },
+  { id:"DOGEUSD", name:"DOGE/USD", sector:"Meme Coin",    float:999, shortPct:0, tier:2, exchange:"CR", alpaca:"DOGE/USD" },
+  { id:"SHIBUSD", name:"SHIB/USD", sector:"Meme Coin",    float:999, shortPct:0, tier:3, exchange:"CR", alpaca:"SHIB/USD" },
+
+  // ── FOREX MAJOR PAIRS ─────────────────────────────────────────────────────
+  { id:"EURUSD", name:"EUR/USD",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"GBPUSD", name:"GBP/USD",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"USDJPY", name:"USD/JPY",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"AUDUSD", name:"AUD/USD",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"USDCAD", name:"USD/CAD",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"USDCHF", name:"USD/CHF",   sector:"Forex Major",  float:999, shortPct:0, tier:1, exchange:"FX" },
+
+  // ── FOREX MINOR PAIRS ─────────────────────────────────────────────────────
+  { id:"EURGBP", name:"EUR/GBP",   sector:"Forex Minor",  float:999, shortPct:0, tier:1, exchange:"FX" },
+  { id:"GBPJPY", name:"GBP/JPY",   sector:"Forex Minor",  float:999, shortPct:0, tier:2, exchange:"FX" },
+  { id:"EURJPY", name:"EUR/JPY",   sector:"Forex Minor",  float:999, shortPct:0, tier:2, exchange:"FX" },
+  { id:"AUDNZD", name:"AUD/NZD",   sector:"Forex Minor",  float:999, shortPct:0, tier:2, exchange:"FX" },
+  { id:"CADJPY", name:"CAD/JPY",   sector:"Forex Minor",  float:999, shortPct:0, tier:2, exchange:"FX" },
+
+  // ── FOREX EXOTIC PAIRS ────────────────────────────────────────────────────
+  { id:"USDTRY", name:"USD/TRY",   sector:"Forex Exotic", float:999, shortPct:0, tier:3, exchange:"FX" },
+  { id:"USDZAR", name:"USD/ZAR",   sector:"Forex Exotic", float:999, shortPct:0, tier:3, exchange:"FX" },
+  { id:"USDMXN", name:"USD/MXN",   sector:"Forex Exotic", float:999, shortPct:0, tier:3, exchange:"FX" },
+  { id:"USDBRL", name:"USD/BRL",   sector:"Forex Exotic", float:999, shortPct:0, tier:3, exchange:"FX" },
+  { id:"USDSGD", name:"USD/SGD",   sector:"Forex Exotic", float:999, shortPct:0, tier:2, exchange:"FX" },
 ];
 
 // ── ASSET KEYWORDS ────────────────────────────────────────────────────────────
@@ -167,6 +206,7 @@ function scoreNewsCatalyst(asset, news) {
 }
 
 function scoreLowFloat(asset, bars) {
+  if (asset.exchange === "FX" || asset.exchange === "CR") return null;
   if (asset.float > 100) return null;
   if (asset.float <= 5)   return { label:`${asset.float}M float — ultra micro`, strength:3 };
   if (asset.float <= 20)  return { label:`${asset.float}M float — micro cap`, strength:2 };
@@ -175,6 +215,7 @@ function scoreLowFloat(asset, bars) {
 }
 
 function scoreShortSqueeze(asset, bars, hasNews) {
+  if (asset.exchange === "FX" || asset.exchange === "CR") return null;
   if (asset.shortPct < 10) return null;
   let strength = asset.shortPct >= 25 ? 3 : asset.shortPct >= 15 ? 2 : 1;
   const reasons = [`${asset.shortPct}% short interest`];
@@ -224,7 +265,9 @@ function buildSignal(asset, edges, bars, news) {
   const price   = latest ? latest.c : 10;
   const bearWords = ["crashes","fraud","delisted","sec investigation","bankrupt","halt"];
   const isBull  = !news.some(n => bearWords.some(w => n.headline.toLowerCase().includes(w)));
-  const base    = asset.float <= 5 ? 120 : asset.float <= 20 ? 75 : asset.float <= 100 ? 40 : 18;
+  const base    = asset.exchange === "FX" ? 8
+              : asset.exchange === "CR" ? (asset.sector.includes("Meme") ? 120 : asset.sector.includes("Mid") ? 45 : 25)
+              : asset.float <= 5 ? 120 : asset.float <= 20 ? 75 : asset.float <= 100 ? 40 : 18;
   const upside  = Math.round(base * (1 + total * 0.1) * (0.9 + Math.random()*0.2));
   const stopPct = asset.float <= 10 ? 0.12 : asset.float <= 50 ? 0.08 : 0.05;
   const tgtPct  = upside / 100;
@@ -295,6 +338,29 @@ export default async function handler(req) {
     } catch {}
   }
 
+  // Fetch crypto bars
+  if (apiKey && apiSecret) {
+    const cryptoAssets = pool.filter(a => a.exchange === "CR" && a.alpaca);
+    if (cryptoAssets.length) {
+      try {
+        const syms  = cryptoAssets.map(a => a.alpaca).join(",");
+        const start = new Date(Date.now()-7*24*60*60*1000).toISOString();
+        const end   = new Date().toISOString();
+        const br = await fetch(
+          `https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols=${encodeURIComponent(syms)}&timeframe=1Day&start=${start}&end=${end}&limit=10`,
+          { headers:{ "APCA-API-KEY-ID":apiKey,"APCA-API-SECRET-KEY":apiSecret } }
+        );
+        const bd = await br.json();
+        if (bd.bars) {
+          for (const [sym, bars] of Object.entries(bd.bars)) {
+            const asset = cryptoAssets.find(a => a.alpaca === sym);
+            if (asset) barsMap[asset.id] = bars;
+          }
+        }
+      } catch {}
+    }
+  }
+
   // Insider data
   const insiderMap = await fetchInsiderBuys(pool.map(a=>a.id));
 
@@ -321,6 +387,21 @@ export default async function handler(req) {
     if (vol) edges.push({ name:"UNUSUAL VOL", detail:vol.label, strength:vol.strength });
 
     if (insiderMap[asset.id]) edges.push({ name:"INSIDER BUY", detail:"Form 4 purchase — last 7 days", strength:2 });
+
+    // For FX/CR — add momentum edge based on price action
+    if (asset.exchange === "FX" || asset.exchange === "CR") {
+      if (bars && bars.length >= 4) {
+        const last = bars[bars.length-1].c;
+        const prev = bars[bars.length-4].c;
+        const pct  = Math.abs((last-prev)/prev*100);
+        if (pct >= 2) edges.push({ name:"MOMENTUM", detail:`${pct.toFixed(1)}% move in 3 bars`, strength: pct >= 5 ? 2 : 1 });
+      }
+      // Always include FX/CR if strong news exists
+      if (newsCat.found && edges.length >= 1) {
+        signals.push(buildSignal(asset, edges, bars, assetNews));
+        continue;
+      }
+    }
 
     if (edges.length >= 2) signals.push(buildSignal(asset, edges, bars, assetNews));
   }
