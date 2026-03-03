@@ -128,7 +128,7 @@ export default async function handler(req) {
   const apiKey    = process.env.ALPACA_API_KEY;
   const apiSecret = process.env.ALPACA_API_SECRET;
   const url       = new URL(req.url);
-  const symbols   = (url.searchParams.get('symbols') || '').split(',').filter(Boolean).slice(0, 20);
+  const symbols   = (url.searchParams.get('symbols') || '').split(',').filter(Boolean).slice(0, 50);
 
   if (!symbols.length) {
     return new Response(JSON.stringify({ error: 'No symbols provided' }), {
