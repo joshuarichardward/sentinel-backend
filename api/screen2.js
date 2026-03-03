@@ -304,7 +304,26 @@ export default async function handler(req) {
 
   const apiKey    = process.env.ALPACA_API_KEY;
   const apiSecret = process.env.ALPACA_API_SECRET;
-  const risk      = parseInt(new URL(req.url).searchParams.get("risk")||"2");
+  const url_      = new URL(req.url);
+  const risk      = parseInt(url_.searchParams.get("risk")||"2");
+
+  // Debug mode — returns universe breakdown without running full screener
+  if (url_.searchParams.get("debug") === "1") {
+    const allExchanges = UNIVERSE.reduce((acc, a) => {
+      acc[a.exchange] = (acc[a.exchange]||0) + 1;
+      return acc;
+    }, {});
+    return new Response(JSON.stringify({ 
+      total: UNIVERSE.length, 
+      exchanges: allExchanges,
+      fxSample: UNIVERSE.filter(a=>a.exchange==="FX").slice(0,3).map(a=>a.id),
+      crSample: UNIVERSE.filter(a=>a.exchange==="CR").slice(0,3).map(a=>a.id),
+      ts: Date.now() 
+    }), {
+      status: 200,
+      headers: { "Content-Type":"application/json","Access-Control-Allow-Origin":"*","Cache-Control":"no-store" }
+    });
+  }
   const tierMap   = { 1:[1,2], 2:[1,2,3], 3:[2,3] };
   const tiers     = tierMap[risk]||[1,2,3];
   const pool      = UNIVERSE.filter(a => tiers.includes(a.tier));
