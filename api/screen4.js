@@ -458,7 +458,7 @@ export default async function handler(req) {
   const apiSecret = process.env.ALPACA_API_SECRET;
   const alpacaHdr = { "APCA-API-KEY-ID":apiKey, "APCA-API-SECRET-KEY":apiSecret };
   const now       = new Date();
-  const start30d  = new Date(now - 30*24*60*60*1000).toISOString();
+  const start30d  = new Date(now - 14*24*60*60*1000).toISOString();
   const start7d   = new Date(now - 7*24*60*60*1000).toISOString();
 
   // ── Fetch news ─────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ export default async function handler(req) {
     const stockSyms  = UNIVERSE.filter(a=>a.type==="stock").map(a=>a.id).join(",");
     const cryptoSyms = "BTC/USD,ETH/USD,SOL/USD,DOGE/USD";
     const [r1, r2]   = await Promise.all([
-      fetch(`https://data.alpaca.markets/v1beta1/news?limit=50&sort=desc&symbols=${encodeURIComponent(stockSyms+","+cryptoSyms)}`, { headers:alpacaHdr }),
+      fetch(`https://data.alpaca.markets/v1beta1/news?limit=30&sort=desc&symbols=${encodeURIComponent(stockSyms+","+cryptoSyms)}`, { headers:alpacaHdr }),
       fetch(`https://data.alpaca.markets/v1beta1/news?limit=20&sort=desc`, { headers:alpacaHdr }),
     ]);
     const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
@@ -478,7 +478,7 @@ export default async function handler(req) {
   const dailyBars = {};
   const h4Bars    = {};
   try {
-    const syms = UNIVERSE.filter(a=>a.type==="stock").map(a=>a.id).join(",");
+    const syms = UNIVERSE.filter(a=>a.type==="stock").slice(0,25).map(a=>a.id).join(",");
     const [rd, rh] = await Promise.all([
       fetch(`https://data.alpaca.markets/v2/stocks/bars?symbols=${encodeURIComponent(syms)}&timeframe=1Day&start=${start30d}&feed=iex&limit=30`, { headers:alpacaHdr }),
       fetch(`https://data.alpaca.markets/v2/stocks/bars?symbols=${encodeURIComponent(syms)}&timeframe=4Hour&start=${start7d}&feed=iex&limit=30`, { headers:alpacaHdr }),
