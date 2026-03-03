@@ -470,7 +470,7 @@ export default async function handler(req) {
     final = [...signals, ...extras];
   }
 
-  final.sort((a,b) => b.upside - a.upside);
+final.sort((a,b) => b.edgeScore - a.edgeScore || b.confidence - a.confidence);
 
   return new Response(JSON.stringify({ signals:final, scored:final.length, universe:pool.length, ts:Date.now() }), {
     status:200,
