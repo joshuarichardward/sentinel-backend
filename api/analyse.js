@@ -29,21 +29,14 @@ export default async function handler(req) {
   let body;
   try {
     body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body', detail: e.message }), {
       status: 400,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
   const { name, dir, entry, target, stop, rr, ttg, upside, conf, catalysts } = body;
-
-  if (!name || !entry) {
-    return new Response(JSON.stringify({ error: 'Missing required fields' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
 
   const prompt = `Signal: ${dir} ${name} | Upside: +${upside}% | Entry: ${entry} Target: ${target} Stop: ${stop} | R/R: ${rr}x | TTG: ${ttg} | Conf: ${conf}% | Catalysts: ${(catalysts || []).join('; ')}`;
 
@@ -63,8 +56,28 @@ export default async function handler(req) {
       }),
     });
 
-    const data = await r.json();
-    const analysis = data.content?.map(c => c.text || '').join('') || 'Analysis unavailable.';
+    const rawText = await r.text();
+
+    // Try to parse — if it fails, return the raw response so we can debug
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Anthropic returned non-JSON', raw: rawText.slice(0, 500) }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // Surface Anthropic errors clearly
+    if (data.error) {
+      return new Response(JSON.stringify({ error: 'Anthropic API error', detail: data.error }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    const analysis = data.content?.map(c => c.text || '').join('') || 'No content returned.';
 
     return new Response(JSON.stringify({ analysis }), {
       status: 200,
@@ -75,7 +88,7 @@ export default async function handler(req) {
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: 'Fetch failed', detail: err.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
