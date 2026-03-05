@@ -609,27 +609,35 @@ function combineSignals(asset, dBars, hBars, livePrice = null) {
 async function fetchLivePrices() {
   const prices = {};
 
-  // ── CRYPTO via Coinbase ────────────────────────────────────────────────────
+  // ── CRYPTO + FOREX via Yahoo Finance ──────────────────────────────────────
   const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
-  await Promise.all(cryptoAssets.map(async (a) => {
-    try {
-      const r = await fetch(`https://api.coinbase.com/v2/prices/${a.id}/spot`, { signal: AbortSignal.timeout(4000) });
-      const d = await r.json();
-      if (d.data?.amount) prices[a.id] = parseFloat(d.data.amount);
-    } catch {}
-  }));
+  const forexAssets  = UNIVERSE.filter(a => a.type === "forex");
 
-  // ── FOREX via exchangerate-api ─────────────────────────────────────────────
+  // Yahoo uses BTC-USD, ETH-USD etc for crypto; EURUSD=X for forex
+  const cryptoYahoo = cryptoAssets.map(a => `${a.id.replace("USD","-USD")}`);
+  const forexYahoo  = forexAssets.map(a => `${a.id}=X`);
+  const cfSymbols   = [...cryptoYahoo, ...forexYahoo].join(",");
+
   try {
-    const r = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(4000) });
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${cfSymbols}&fields=regularMarketPrice`,
+      { headers: yahooHeaders, signal: AbortSignal.timeout(8000) }
+    );
     const d = await r.json();
-    if (d.rates) {
-      for (const a of UNIVERSE.filter(x => x.type === "forex")) {
-        const base  = a.id.slice(0, 3);
-        const quote = a.id.slice(3, 6);
-        if (base === "USD" && d.rates[quote])        prices[a.id] = parseFloat(d.rates[quote].toFixed(5));
-        else if (quote === "USD" && d.rates[base])   prices[a.id] = parseFloat((1 / d.rates[base]).toFixed(5));
-        else if (d.rates[base] && d.rates[quote])    prices[a.id] = parseFloat((d.rates[quote] / d.rates[base]).toFixed(5));
+    for (const q of (d?.quoteResponse?.result || [])) {
+      if (!q.regularMarketPrice || q.regularMarketPrice <= 0) continue;
+      // Match back to our asset IDs
+      const sym = q.symbol;
+      if (sym.endsWith("-USD")) {
+        // Crypto: BTC-USD → BTCUSD
+        const id = sym.replace("-USD", "USD");
+        const asset = cryptoAssets.find(a => a.id === id);
+        if (asset) prices[asset.id] = q.regularMarketPrice;
+      } else if (sym.endsWith("=X")) {
+        // Forex: EURUSD=X → EURUSD
+        const id = sym.replace("=X", "");
+        const asset = forexAssets.find(a => a.id === id);
+        if (asset) prices[asset.id] = q.regularMarketPrice;
       }
     }
   } catch {}
