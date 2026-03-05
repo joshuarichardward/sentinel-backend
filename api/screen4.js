@@ -634,10 +634,27 @@ async function fetchLivePrices() {
     }
   } catch {}
 
-  // ── STOCKS via Finnhub ─────────────────────────────────────────────────────
+  // ── STOCKS via Polygon.io previous close (free tier, accurate) ────────────
   const stockAssets  = UNIVERSE.filter(a => a.type === "stock");
+  const polygonKey   = process.env.POLYGON_API_KEY;
   const finnhubKey   = process.env.FINNHUB_API_KEY;
-  if (finnhubKey && finnhubKey !== "demo") {
+
+  if (polygonKey) {
+    // Polygon: batch snapshot endpoint — all tickers in one call
+    try {
+      const tickers = stockAssets.map(a => a.id).join(",");
+      const r = await fetch(
+        `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${tickers}&apiKey=${polygonKey}`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      const d = await r.json();
+      for (const t of (d.tickers || [])) {
+        const price = t.day?.c || t.prevDay?.c || t.lastTrade?.p;
+        if (price && price > 0) prices[t.ticker] = price;
+      }
+    } catch {}
+  } else if (finnhubKey && finnhubKey !== "demo") {
+    // Fallback: Finnhub individual quotes
     await Promise.all(stockAssets.map(async (a) => {
       try {
         const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(4000) });
