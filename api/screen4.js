@@ -568,10 +568,7 @@ function combineSignals(asset, dBars, hBars) {
       const ttg    = asset.type === "forex" ? "4h–2d" : asset.type === "crypto" ? "1–3d" : "2–7d";
 
       // Build catalyst list from each aligned signal
-      const catalysts = [
-        `${theories.join(" + ")} confluence · ${tf}`,
-        ...aligned.map(r => `[${r.theory}] ${r.setup}: ${r.detail}`),
-      ].slice(0, 5);
+      const catalysts = [...new Set(aligned.map(r => `${r.setup}: ${r.detail}`))].slice(0, 4);
 
       signals.push({
         id:           `${asset.id}-${dir}-${tf}-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
@@ -678,7 +675,7 @@ export async function handler(req) {
             confidence: Math.min(95, Math.round(35 + r.strength * 0.45)),
             catalystScore: Math.round(r.strength / 10),
             timeToTarget: asset.type === "forex" ? "4h–2d" : asset.type === "crypto" ? "1–3d" : "2–7d",
-            catalysts: [`[${r.theory}] ${r.setup}: ${r.detail}`],
+            catalysts: [`${r.setup}: ${r.detail}`],
             edgeScore: r.strength, theoryCount: 1, theories: [r.theory],
             edges: [r.setup], timeframe: tf, sector: asset.sector, type: asset.type,
             timestamp: Date.now(),
