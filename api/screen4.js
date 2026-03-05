@@ -27,19 +27,19 @@ const UNIVERSE = [
   { id:"SUIUSD",  name:"SUI",             sector:"Crypto Mid",    type:"crypto", vol:0.08,   base:2.85    },
   // FOREX — prices as of Mar 2026
   { id:"EURUSD",  name:"EUR/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:1.0820  },
-  { id:"GBPUSD",  name:"GBP/USD",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:1.2885  },
-  { id:"USDJPY",  name:"USD/JPY",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:148.80  },
-  { id:"AUDUSD",  name:"AUD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.6305  },
-  { id:"USDCAD",  name:"USD/CAD",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:1.4380  },
-  { id:"USDCHF",  name:"USD/CHF",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:0.8985  },
-  { id:"NZDUSD",  name:"NZD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.5710  },
-  { id:"GBPJPY",  name:"GBP/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.009,  base:191.70  },
-  { id:"EURGBP",  name:"EUR/GBP",         sector:"Forex Minor",   type:"forex",  vol:0.005,  base:0.8395  },
-  { id:"EURJPY",  name:"EUR/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.008,  base:161.00  },
-  { id:"CADJPY",  name:"CAD/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.007,  base:103.40  },
-  { id:"USDTRY",  name:"USD/TRY",         sector:"Forex Exotic",  type:"forex",  vol:0.015,  base:36.20   },
-  { id:"USDZAR",  name:"USD/ZAR",         sector:"Forex Exotic",  type:"forex",  vol:0.012,  base:18.45   },
-  { id:"USDMXN",  name:"USD/MXN",         sector:"Forex Exotic",  type:"forex",  vol:0.010,  base:20.35   },
+  { id:"GBPUSD",  name:"GBP/USD",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:1.2940  },
+  { id:"USDJPY",  name:"USD/JPY",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:148.50  },
+  { id:"AUDUSD",  name:"AUD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.6290  },
+  { id:"USDCAD",  name:"USD/CAD",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:1.4420  },
+  { id:"USDCHF",  name:"USD/CHF",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:0.8960  },
+  { id:"NZDUSD",  name:"NZD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.5700  },
+  { id:"GBPJPY",  name:"GBP/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.009,  base:192.10  },
+  { id:"EURGBP",  name:"EUR/GBP",         sector:"Forex Minor",   type:"forex",  vol:0.005,  base:0.8360  },
+  { id:"EURJPY",  name:"EUR/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.008,  base:160.50  },
+  { id:"CADJPY",  name:"CAD/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.007,  base:102.90  },
+  { id:"USDTRY",  name:"USD/TRY",         sector:"Forex Exotic",  type:"forex",  vol:0.015,  base:44.00   },
+  { id:"USDZAR",  name:"USD/ZAR",         sector:"Forex Exotic",  type:"forex",  vol:0.012,  base:18.50   },
+  { id:"USDMXN",  name:"USD/MXN",         sector:"Forex Exotic",  type:"forex",  vol:0.010,  base:20.40   },
   // STOCKS — prices as of Mar 2026
   { id:"IONQ",    name:"IonQ",            sector:"Quantum",       type:"stock",  vol:0.07,   base:28.50   },
   { id:"RGTI",    name:"Rigetti",         sector:"Quantum",       type:"stock",  vol:0.08,   base:9.80    },
@@ -631,9 +631,18 @@ async function fetchLivePrices() {
   // Reverse map: Yahoo symbol → our asset ID
   const yahooToCryptoId = Object.fromEntries(Object.entries(cryptoYahooMap).map(([k,v]) => [v, k]));
 
-  // Forex: Yahoo uses EURUSD=X format — matches our IDs directly
+  // Explicit Yahoo forex map — Yahoo uses EURUSD=X for cross pairs, TRY=X for USD/XXX
+  const forexYahooMap = {
+    "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X",
+    "AUDUSD": "AUDUSD=X", "USDCAD": "CAD=X",    "USDCHF": "CHF=X",
+    "NZDUSD": "NZDUSD=X", "GBPJPY": "GBPJPY=X", "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X", "CADJPY": "CADJPY=X", "USDTRY": "TRY=X",
+    "USDZAR": "ZAR=X",    "USDMXN": "MXN=X",
+  };
+  const yahooToForexId = Object.fromEntries(Object.entries(forexYahooMap).map(([k,v]) => [v, k]));
+
   const cryptoYahoo = cryptoAssets.map(a => cryptoYahooMap[a.id] || `${a.id.slice(0,-3)}-USD`);
-  const forexYahoo  = forexAssets.map(a => `${a.id}=X`);
+  const forexYahoo  = forexAssets.map(a => forexYahooMap[a.id]).filter(Boolean);
   const cfSymbols   = [...cryptoYahoo, ...forexYahoo].join(",");
 
   try {
@@ -649,9 +658,8 @@ async function fetchLivePrices() {
         const id = yahooToCryptoId[sym];
         if (id) prices[id] = q.regularMarketPrice;
       } else if (sym.endsWith("=X")) {
-        const id = sym.replace("=X", "");
-        const asset = forexAssets.find(a => a.id === id);
-        if (asset) prices[asset.id] = q.regularMarketPrice;
+        const id = yahooToForexId[sym];
+        if (id) prices[id] = q.regularMarketPrice;
       }
     }
   } catch {}
