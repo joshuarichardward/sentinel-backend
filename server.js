@@ -1,14 +1,8 @@
 import express from 'express';
-import screen4Module  from './api/screen4.js';
-import analyseModule  from './api/analyse.js';
-import newsModule     from './api/news.js';
-import pricesModule   from './api/prices.js';
-
-// Handle both named and default exports
-const screen4 = screen4Module.handler || screen4Module.default || screen4Module;
-const analyse = analyseModule.handler || analyseModule.default || analyseModule;
-const news    = newsModule.handler    || newsModule.default    || newsModule;
-const prices  = pricesModule.handler  || pricesModule.default  || pricesModule;
+import { handler as screen4 } from './api/screen4.js';
+import analyse from './api/analyse.js';
+import news    from './api/news.js';
+import prices  from './api/prices.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
