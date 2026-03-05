@@ -66,19 +66,57 @@ const SOURCE_BIAS = {
 };
 
 const LEFT_KEYWORDS  = [
-  'climate change','green energy','renewable','social justice','inequality','minimum wage',
-  'universal healthcare','gun control','immigration reform','progressive','liberal',
-  'regulation','workers rights','union','diversity','inclusion','equity','welfare',
-  'medicare','medicaid','student debt','affordable housing','lgbtq','trans rights',
-  'systemic racism','police reform','defund','carbon tax','wealth tax','billionaire tax',
+  // Environment & energy
+  'climate change','green energy','renewable','clean energy','solar','wind power',
+  'carbon','emissions','esg','sustainability','electric vehicle','ev mandate',
+  'paris agreement','net zero','green new deal','carbon tax','climate crisis',
+  // Economic policy
+  'regulation','regulations','regulated','regulator','sec charges','ftc',
+  'antitrust','wealth tax','billionaire tax','minimum wage','workers','union',
+  'inequality','income gap','wage gap','living wage','universal basic',
+  'student debt','student loan','debt forgiveness','affordable housing',
+  'public housing','rent control','price controls','windfall tax',
+  // Healthcare & social
+  'universal healthcare','medicare','medicaid','obamacare','aca','welfare',
+  'food stamps','snap','social security','disability','affordable care',
+  // Tech & finance regulation
+  'crypto crackdown','crypto ban','sec investigation','sec lawsuit','fined',
+  'penalty','consumer protection','cfpb','data privacy','antitrust probe',
+  'monopoly','big tech regulation','social media regulation',
+  // Political
+  'progressive','liberal','democrat','biden','harris','left wing',
+  'social justice','diversity','inclusion','equity','dei',
+  'lgbtq','trans','abortion rights','reproductive','immigration reform',
+  'refugee','asylum','gun control','gun reform','police reform',
+  'defund','systemic','reparations','voting rights',
 ];
 
 const RIGHT_KEYWORDS = [
-  'deregulation','tax cut','tax cuts','free market','border security','illegal immigration',
-  'second amendment','pro-life','conservative','traditional values','school choice',
-  'energy independence','drill','fossil fuel','coal','sanctions','tariff','tariffs',
-  'america first','deep state','election integrity','voter id','law and order',
-  'big government','government overreach','socialist','socialism','woke',
+  // Economic policy
+  'deregulation','tax cut','tax cuts','tax relief','lower taxes','flat tax',
+  'free market','free trade','privatize','privatisation','privatization',
+  'less government','small government','big government','government overreach',
+  'spending cuts','deficit reduction','balanced budget','austerity',
+  // Energy
+  'drill','drilling','fossil fuel','coal','oil production','lng',
+  'energy independence','pipeline','keystone','fracking','offshore drilling',
+  // Trade & borders
+  'tariff','tariffs','trade war','sanctions','border security','border wall',
+  'illegal immigration','illegal alien','deportation','america first',
+  'buy american','reshoring','protectionist',
+  // Finance & crypto
+  'debank','debanking','bank deregulation','crypto freedom','bitcoin strategic',
+  'strategic reserve','gold standard','fed audit','end the fed',
+  // Security & defense
+  'defense spending','military spending','nato','pentagon','weapons',
+  'second amendment','gun rights','law and order','tough on crime',
+  'death penalty','mandatory minimum',
+  // Political
+  'conservative','republican','trump','maga','right wing','gop',
+  'traditional values','pro-life','school choice','vouchers',
+  'election integrity','voter id','deep state','woke','anti-woke',
+  'censorship','free speech','first amendment','big tech bias',
+  'socialist','socialism','marxist','communist',
 ];
 
 function classifyBias(headline, source) {
