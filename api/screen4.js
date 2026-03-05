@@ -146,15 +146,16 @@ function makeBars(base, volPct, count = 30) {
         break;
     }
 
-    const noise = (Math.random() - 0.5) * vol * 0.3;
-    const o = p;
-    const c = Math.max(p * 0.01, p + drift + noise);
+    const noise  = (Math.random() - 0.5) * vol * 0.3;
+    const floor  = base * 0.3; // price can never go below 30% of base
+    const o      = p;
+    const c      = Math.max(floor, p + drift + noise);
     const spread = (Math.abs(drift) + vol * 0.2);
 
     bars.push({
       o, c,
       h: Math.max(o, c) + spread * (0.1 + Math.random() * 0.3),
-      l: Math.min(o, c) - spread * (0.1 + Math.random() * 0.3),
+      l: Math.max(floor * 0.95, Math.min(o, c) - spread * (0.1 + Math.random() * 0.3)),
       v: (1e6 + Math.random() * 1e7) * volMult,
       pattern,
     });
