@@ -34,6 +34,7 @@ async function adapt(handler, req, res) {
 app.get('/api/screen4',  (req, res) => adapt(screen4, req, res));
 app.get('/api/news',     (req, res) => adapt(news,    req, res));
 app.get('/api/prices',   (req, res) => adapt(prices,  req, res));
+app.post('/api/analyse', (req, res) => adapt(analyse, req, res));
 app.get('/api/analyse',  (req, res) => adapt(analyse, req, res));
 
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
