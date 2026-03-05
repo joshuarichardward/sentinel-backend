@@ -59,24 +59,10 @@ const SOURCE_BIAS = {
   'The Federalist':   'right',
   'Daily Caller':     'right',
 
-  // CENTRE / FINANCIAL (no political lean)
+  // Truly neutral wire services — always centre regardless of headline
   'Reuters':          'centre',
   'AP':               'centre',
   'Associated Press': 'centre',
-  'Bloomberg':        'centre',
-  'BBC':              'centre',
-  'MarketWatch':      'centre',
-  'CNBC Markets':     'centre',
-  'CNBC Tech':        'centre',
-  'CNBC':             'centre',
-  'Financial Times':  'centre',
-  'Economist':        'centre',
-  'Yahoo Finance':    'centre',
-  'Investing.com':    'centre',
-  'CoinDesk':         'centre',
-  'CoinTelegraph':    'centre',
-  'ForexLive':        'centre',
-  'FX Street':        'centre',
 };
 
 const LEFT_KEYWORDS  = [
