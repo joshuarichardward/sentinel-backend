@@ -634,50 +634,42 @@ async function fetchLivePrices() {
     }
   } catch {}
 
-  // ── STOCKS via Twelve Data (real-time, free tier) ─────────────────────────
+  // ── STOCKS via Yahoo Finance (real-time, no key needed) ──────────────────
   const stockAssets  = UNIVERSE.filter(a => a.type === "stock");
-  const twelveKey    = process.env.TWELVE_DATA_API_KEY;
-  const polygonKey   = process.env.POLYGON_API_KEY;
-  const finnhubKey   = process.env.FINNHUB_API_KEY;
+  const yahooHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://finance.yahoo.com",
+    "Referer": "https://finance.yahoo.com/",
+  };
 
-  if (twelveKey) {
-    // Twelve Data: batch price endpoint — all tickers in one call
-    try {
-      const tickers = stockAssets.map(a => a.id).join(",");
-      const r = await fetch(
-        `https://api.twelvedata.com/price?symbol=${tickers}&apikey=${twelveKey}`,
-        { signal: AbortSignal.timeout(6000) }
-      );
-      const d = await r.json();
-      for (const a of stockAssets) {
-        // Single ticker returns { price: "123.45" }
-        // Multiple tickers returns { TICKER: { price: "123.45" } }
-        const entry = d[a.id] || d;
-        const price = parseFloat(entry?.price);
-        if (price && price > 0) prices[a.id] = price;
+  try {
+    const symbols = stockAssets.map(a => a.id).join(",");
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,currency`,
+      { headers: yahooHeaders, signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    for (const q of (d?.quoteResponse?.result || [])) {
+      if (q.regularMarketPrice && q.regularMarketPrice > 0) {
+        prices[q.symbol] = q.regularMarketPrice;
       }
-    } catch {}
-  } else if (polygonKey) {
-    // Fallback: Polygon snapshot (15min delayed)
-    try {
-      const tickers = stockAssets.map(a => a.id).join(",");
-      const r = await fetch(
-        `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${tickers}&apiKey=${polygonKey}`,
-        { signal: AbortSignal.timeout(6000) }
-      );
-      const d = await r.json();
-      for (const t of (d.tickers || [])) {
-        const price = t.day?.c || t.prevDay?.c || t.lastTrade?.p;
-        if (price && price > 0) prices[t.ticker] = price;
-      }
-    } catch {}
-  } else if (finnhubKey && finnhubKey !== "demo") {
-    // Last resort: Finnhub
-    await Promise.all(stockAssets.map(async (a) => {
+    }
+  } catch {}
+
+  // Fallback: fetch individually if batch failed
+  const missingStocks = stockAssets.filter(a => !prices[a.id]);
+  if (missingStocks.length > 0) {
+    await Promise.all(missingStocks.map(async (a) => {
       try {
-        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(4000) });
+        const r = await fetch(
+          `https://query2.finance.yahoo.com/v8/finance/chart/${a.id}?interval=1d&range=1d`,
+          { headers: yahooHeaders, signal: AbortSignal.timeout(5000) }
+        );
         const d = await r.json();
-        if (d.c && d.c > 0) prices[a.id] = d.c;
+        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price && price > 0) prices[a.id] = price;
       } catch {}
     }));
   }
