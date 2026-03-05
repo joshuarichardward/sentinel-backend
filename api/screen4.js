@@ -1,5 +1,3 @@
-export const config = { runtime: 'nodejs', maxDuration: 25 };
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SENTINEL SIGNAL ENGINE v7
 // Theory: Wyckoff Method + Elliott Wave + RSI Divergence
@@ -577,7 +575,7 @@ function combineSignals(asset, dBars, hBars) {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export default async function handler(req) {
+export async function handler(req) {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
   }
