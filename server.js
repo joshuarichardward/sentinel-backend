@@ -35,16 +35,7 @@ app.get('/api/screen4',  (req, res) => adapt(screen4, req, res));
 app.get('/api/news',     (req, res) => adapt(news,    req, res));
 app.get('/api/prices',   (req, res) => adapt(prices,  req, res));
 app.post('/api/analyse', (req, res) => adapt(analyse, req, res));
-app.get('/api/debug-env', (req, res) => {
-  const allKeys = Object.keys(process.env).filter(k => !k.includes('SECRET') && !k.includes('PASSWORD'));
-  res.json({
-    hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
-    keyPrefix: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice(0, 8) + '...' : 'NOT SET',
-    nodeEnv: process.env.NODE_ENV,
-    allEnvKeys: allKeys,
-    deployTime: new Date().toISOString(),
-  });
-});
+
 app.get('/api/analyse',  (req, res) => adapt(analyse, req, res));
 
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
