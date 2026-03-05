@@ -531,7 +531,7 @@ function rsiDivergenceAnalysis(bars) {
 // Scores by theory alignment count + individual theory strength
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function combineSignals(asset, dBars, hBars) {
+function combineSignals(asset, dBars, hBars, livePrice = null) {
   const signals = [];
 
   for (const [bars, tf] of [[dBars, "Daily"], [hBars, "4H"]]) {
@@ -553,7 +553,7 @@ function combineSignals(asset, dBars, hBars) {
       const multiBonus = theories.length >= 3 ? 10 : theories.length === 2 ? 5 : 0;
       const finalScore = Math.min(100, topStrength + multiBonus);
 
-      const entry  = bars[bars.length - 1].c;
+      const entry  = livePrice || bars[bars.length - 1].c;
       const atr    = calcATR(bars) || entry * 0.02;
       const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
       // Use percentage-based targets for micro-priced assets to prevent insane % swings
@@ -605,56 +605,47 @@ function combineSignals(asset, dBars, hBars) {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Fetch live prices from Coinbase (crypto), exchangerate (forex), Yahoo (stocks)
+// Fetch live prices from multiple sources
 async function fetchLivePrices() {
   const prices = {};
 
-  try {
-    // ── CRYPTO via Coinbase ──────────────────────────────────────────────────
-    const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
-    await Promise.all(cryptoAssets.map(async (a) => {
-      try {
-        const r = await fetch(`https://api.coinbase.com/v2/prices/${a.id}/spot`);
-        const d = await r.json();
-        if (d.data?.amount) prices[a.id] = parseFloat(d.data.amount);
-      } catch {}
-    }));
-
-    // ── FOREX via exchangerate-api (free tier) ────────────────────────────────
+  // ── CRYPTO via Coinbase ────────────────────────────────────────────────────
+  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
+  await Promise.all(cryptoAssets.map(async (a) => {
     try {
-      const r = await fetch("https://open.er-api.com/v6/latest/USD");
+      const r = await fetch(`https://api.coinbase.com/v2/prices/${a.id}/spot`, { signal: AbortSignal.timeout(4000) });
       const d = await r.json();
-      if (d.rates) {
-        const rates = d.rates;
-        const usd = 1;
-        for (const a of UNIVERSE.filter(x => x.type === "forex")) {
-          // Build price from USD base
-          const [base, quote] = [a.id.slice(0,3), a.id.slice(3,6)];
-          const baseRate  = base  === "USD" ? 1 : (rates[base]  ? 1 / rates[base]  : null);
-          const quoteRate = quote === "USD" ? 1 : (rates[quote] ? 1 / rates[quote] : null);
-          if (baseRate && quoteRate) prices[a.id] = parseFloat((quoteRate / baseRate * (base === "USD" ? rates[quote] : 1 / rates[base])).toFixed(5));
-          // Simpler: just get direct cross
-          if (base === "USD" && rates[quote]) prices[a.id] = parseFloat(rates[quote].toFixed(5));
-          else if (quote === "USD" && rates[base]) prices[a.id] = parseFloat((1 / rates[base]).toFixed(5));
-          else if (rates[base] && rates[quote]) prices[a.id] = parseFloat((rates[quote] / rates[base]).toFixed(5));
-        }
-      }
+      if (d.data?.amount) prices[a.id] = parseFloat(d.data.amount);
     } catch {}
+  }));
 
-    // ── STOCKS via Finnhub (free, no key needed for basic quotes) ────────────
-    const stockAssets = UNIVERSE.filter(a => a.type === "stock");
-    const finnhubKey  = process.env.FINNHUB_API_KEY || "demo";
+  // ── FOREX via exchangerate-api ─────────────────────────────────────────────
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(4000) });
+    const d = await r.json();
+    if (d.rates) {
+      for (const a of UNIVERSE.filter(x => x.type === "forex")) {
+        const base  = a.id.slice(0, 3);
+        const quote = a.id.slice(3, 6);
+        if (base === "USD" && d.rates[quote])        prices[a.id] = parseFloat(d.rates[quote].toFixed(5));
+        else if (quote === "USD" && d.rates[base])   prices[a.id] = parseFloat((1 / d.rates[base]).toFixed(5));
+        else if (d.rates[base] && d.rates[quote])    prices[a.id] = parseFloat((d.rates[quote] / d.rates[base]).toFixed(5));
+      }
+    }
+  } catch {}
+
+  // ── STOCKS via Finnhub ─────────────────────────────────────────────────────
+  const stockAssets  = UNIVERSE.filter(a => a.type === "stock");
+  const finnhubKey   = process.env.FINNHUB_API_KEY;
+  if (finnhubKey && finnhubKey !== "demo") {
     await Promise.all(stockAssets.map(async (a) => {
       try {
-        const r = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`
-        );
+        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(4000) });
         const d = await r.json();
-        // c = current price, pc = previous close
         if (d.c && d.c > 0) prices[a.id] = d.c;
       } catch {}
     }));
-  } catch {}
+  }
 
   return prices;
 }
@@ -671,11 +662,12 @@ export async function handler(req) {
   const seen    = new Set(); // key: assetId-direction-timeframe (one signal per combo)
 
   for (const asset of UNIVERSE) {
-    const base  = livePrices[asset.id] || asset.base;
-    const dBars = makeBars(base, asset.vol, 30);
-    const hBars = makeBars(base, asset.vol * 0.45, 30);
+    const livePrice = livePrices[asset.id] || null;
+    const base      = livePrice || asset.base;
+    const dBars     = makeBars(base, asset.vol, 30);
+    const hBars     = makeBars(base, asset.vol * 0.45, 30);
 
-    for (const sig of combineSignals(asset, dBars, hBars)) {
+    for (const sig of combineSignals(asset, dBars, hBars, livePrice)) {
       const key = `${asset.id}-${sig.direction}-${sig.timeframe}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -711,7 +703,7 @@ export async function handler(req) {
           seenSingle.add(key);
           // Skip if already covered by a multi-theory signal
           if (seen.has(`${asset.id}-${r.direction}-${tf}`)) continue;
-          const entry  = bars[bars.length - 1].c;
+          const entry  = livePrice || bars[bars.length - 1].c;
           const atr    = calcATR(bars) || entry * 0.02;
           const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
           const maxMove = entry * (asset.type === "forex" ? 0.03 : asset.type === "crypto" ? 0.15 : 0.25);
