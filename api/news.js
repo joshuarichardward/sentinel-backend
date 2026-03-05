@@ -31,18 +31,84 @@ function parseRSS(xml, src) {
   return articles;
 }
 
-function classifyBias(text) {
-  const t = text.toLowerCase();
-  const bullish = ['surges','jumps','gains','rises','beats','record','high','rally','boosts',
-    'approval','upgrade','bullish','inflows','strong','growth','wins','expands','soars','spikes',
-    'breakout','bottom','recovery','rebound','bullrun','halving','etf approval'];
-  const bearish = ['falls','drops','slips','plunges','warns','misses','low','selloff','crash',
-    'cut','downgrade','bearish','outflows','weak','decline','loses','shrinks','risk','fears',
-    'tumbles','recession','inflation','layoffs','investigation','fine','ban','hack','exploit'];
+// ── POLITICAL BIAS CLASSIFIER ─────────────────────────────────────────────────
+// First checks source-level bias (most reliable), then falls back to keywords
+
+const SOURCE_BIAS = {
+  // LEFT-LEANING
+  'CNN Business':     'left',
+  'CNN':              'left',
+  'The Guardian':     'left',
+  'HuffPost':         'left',
+  'MSNBC':            'left',
+  'New York Times':   'left',
+  'NPR':              'left',
+  'Vox':              'left',
+  'Mother Jones':     'left',
+  'The Atlantic':     'left',
+  'Salon':            'left',
+
+  // RIGHT-LEANING
+  'Fox Business':     'right',
+  'Fox News':         'right',
+  'Breitbart':        'right',
+  'Daily Wire':       'right',
+  'Washington Times': 'right',
+  'New York Post':    'right',
+  'Newsmax':          'right',
+  'The Federalist':   'right',
+  'Daily Caller':     'right',
+
+  // CENTRE / FINANCIAL (no political lean)
+  'Reuters':          'centre',
+  'AP':               'centre',
+  'Associated Press': 'centre',
+  'Bloomberg':        'centre',
+  'BBC':              'centre',
+  'MarketWatch':      'centre',
+  'CNBC Markets':     'centre',
+  'CNBC Tech':        'centre',
+  'CNBC':             'centre',
+  'Financial Times':  'centre',
+  'Economist':        'centre',
+  'Yahoo Finance':    'centre',
+  'Investing.com':    'centre',
+  'CoinDesk':         'centre',
+  'CoinTelegraph':    'centre',
+  'ForexLive':        'centre',
+  'FX Street':        'centre',
+};
+
+const LEFT_KEYWORDS  = [
+  'climate change','green energy','renewable','social justice','inequality','minimum wage',
+  'universal healthcare','gun control','immigration reform','progressive','liberal',
+  'regulation','workers rights','union','diversity','inclusion','equity','welfare',
+  'medicare','medicaid','student debt','affordable housing','lgbtq','trans rights',
+  'systemic racism','police reform','defund','carbon tax','wealth tax','billionaire tax',
+];
+
+const RIGHT_KEYWORDS = [
+  'deregulation','tax cut','tax cuts','free market','border security','illegal immigration',
+  'second amendment','pro-life','conservative','traditional values','school choice',
+  'energy independence','drill','fossil fuel','coal','sanctions','tariff','tariffs',
+  'america first','deep state','election integrity','voter id','law and order',
+  'big government','government overreach','socialist','socialism','woke',
+];
+
+function classifyBias(headline, source) {
+  // 1. Source-level classification
+  const srcBias = SOURCE_BIAS[source];
+  if (srcBias) return srcBias;
+
+  // 2. Keyword fallback
+  const t = (headline || '').toLowerCase();
   let score = 0;
-  bullish.forEach(w => { if (t.includes(w)) score++; });
-  bearish.forEach(w => { if (t.includes(w)) score--; });
-  return score > 0 ? 'bull' : score < 0 ? 'bear' : 'neutral';
+  LEFT_KEYWORDS.forEach(w  => { if (t.includes(w)) score--; });
+  RIGHT_KEYWORDS.forEach(w => { if (t.includes(w)) score++; });
+
+  if (score > 0) return 'right';
+  if (score < 0) return 'left';
+  return 'unknown';
 }
 
 export default async function handler(req) {
@@ -85,7 +151,7 @@ export default async function handler(req) {
     src:  a.src,
     url:  a.link || null,
     ts:   a.ts,
-    bias: classifyBias(a.title),
+    bias: classifyBias(a.title, a.src),
   }));
 
   return new Response(JSON.stringify({ articles }), {
