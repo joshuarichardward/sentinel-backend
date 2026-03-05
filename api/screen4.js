@@ -605,7 +605,7 @@ export default async function handler(req) {
   // risk=1 (Grandma Approved)  — 3 theories, fallback to 2 if none
   // risk=2 (Divorce Territory) — 2+ theories
   // risk=3 (YOLO)              — 1+ theory (everything)
-  const url  = new URL(req.url);
+  const url  = new URL(req.url, "http://localhost");
   const risk = parseInt(url.searchParams.get("risk") || "2");
 
   let filtered;
