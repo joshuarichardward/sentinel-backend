@@ -641,16 +641,19 @@ async function fetchLivePrices() {
       }
     } catch {}
 
-    // ── STOCKS via Yahoo Finance ──────────────────────────────────────────────
+    // ── STOCKS via Finnhub (free, no key needed for basic quotes) ────────────
     const stockAssets = UNIVERSE.filter(a => a.type === "stock");
-    const symbols = stockAssets.map(a => a.id).join(",");
-    try {
-      const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice`);
-      const d = await r.json();
-      for (const q of (d.quoteResponse?.result || [])) {
-        if (q.regularMarketPrice) prices[q.symbol] = q.regularMarketPrice;
-      }
-    } catch {}
+    const finnhubKey  = process.env.FINNHUB_API_KEY || "demo";
+    await Promise.all(stockAssets.map(async (a) => {
+      try {
+        const r = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`
+        );
+        const d = await r.json();
+        // c = current price, pc = previous close
+        if (d.c && d.c > 0) prices[a.id] = d.c;
+      } catch {}
+    }));
   } catch {}
 
   return prices;
