@@ -528,10 +528,13 @@ function combineSignals(asset, dBars, hBars) {
       const entry  = bars[bars.length - 1].c;
       const atr    = calcATR(bars) || entry * 0.02;
       const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
-      const target = dir === "L" ? entry + atr * mult : entry - atr * mult;
-      const stop   = dir === "L" ? entry - atr * 1.5  : entry + atr * 1.5;
-      const upside = Math.abs(Math.round((target - entry) / entry * 100));
-      const rr     = parseFloat((Math.abs(target - entry) / Math.max(0.00001, Math.abs(entry - stop))).toFixed(1));
+      // Use percentage-based targets for micro-priced assets to prevent insane % swings
+      const maxMove = entry * (asset.type === "forex" ? 0.03 : asset.type === "crypto" ? 0.15 : 0.25);
+      const move    = Math.min(atr * mult, maxMove);
+      const target  = dir === "L" ? entry + move : entry - move;
+      const stop    = dir === "L" ? entry - move * 0.4 : entry + move * 0.4;
+      const upside  = Math.min(50, Math.abs(Math.round((target - entry) / entry * 100)));
+      const rr      = parseFloat((Math.abs(target - entry) / Math.max(0.00001, Math.abs(entry - stop))).toFixed(1));
       const ttg    = asset.type === "forex" ? "4h–2d" : asset.type === "crypto" ? "1–3d" : "2–7d";
 
       // Build catalyst list from each aligned signal
@@ -606,17 +609,65 @@ export async function handler(req) {
   const url  = new URL(req.url, "http://localhost");
   const risk = parseInt(url.searchParams.get("risk") || "2");
 
+  // Build single-theory signals for YOLO mode
+  const singleTheorySignals = [];
+  if (risk === 3) {
+    const seenSingle = new Set();
+    for (const asset of UNIVERSE) {
+      for (const [bars, tf] of [[makeBars(asset.base, asset.vol, 30), "Daily"], [makeBars(asset.base, asset.vol * 0.45, 30), "4H"]]) {
+        const all = [
+          ...wyckoffAnalysis(bars),
+          ...elliottWaveAnalysis(bars),
+          ...rsiDivergenceAnalysis(bars),
+        ];
+        for (const r of all) {
+          const key = `${asset.id}-${r.direction}-${tf}-${r.setup}`;
+          if (seenSingle.has(key)) continue;
+          // Skip if already covered by a multi-theory signal
+          if (signals.find(s => s.tid === asset.id && s.direction === r.direction && s.timeframe === tf)) continue;
+          seenSingle.add(key);
+          const entry  = bars[bars.length - 1].c;
+          const atr    = calcATR(bars) || entry * 0.02;
+          const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
+          const maxMove = entry * (asset.type === "forex" ? 0.03 : asset.type === "crypto" ? 0.15 : 0.25);
+          const move    = Math.min(atr * mult, maxMove);
+          const target  = r.direction === "L" ? entry + move : entry - move;
+          const stop    = r.direction === "L" ? entry - move * 0.4 : entry + move * 0.4;
+          const upside  = Math.min(50, Math.abs(Math.round((target - entry) / entry * 100)));
+          const rr      = parseFloat((Math.abs(target - entry) / Math.max(0.00001, Math.abs(entry - stop))).toFixed(1));
+          singleTheorySignals.push({
+            id: `${asset.id}-${r.direction}-${tf}-single-${Math.random().toString(36).slice(2,5)}`,
+            tid: asset.id, name: asset.name,
+            instrument: `${asset.sector} · ${asset.type.toUpperCase()} · ${tf}`,
+            tier: 3, direction: r.direction,
+            entry: parseFloat(entry.toFixed(6)),
+            target: parseFloat(target.toFixed(6)),
+            stop: parseFloat(stop.toFixed(6)),
+            upside: Math.max(1, upside), riskReward: rr,
+            confidence: Math.min(95, Math.round(35 + r.strength * 0.45)),
+            catalystScore: Math.round(r.strength / 10),
+            timeToTarget: asset.type === "forex" ? "4h–2d" : asset.type === "crypto" ? "1–3d" : "2–7d",
+            catalysts: [`[${r.theory}] ${r.setup}: ${r.detail}`],
+            edgeScore: r.strength, theoryCount: 1, theories: [r.theory],
+            edges: [r.setup], timeframe: tf, sector: asset.sector, type: asset.type,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+  }
+
   let filtered;
   if (risk === 1) {
     filtered = signals.filter(s => s.theoryCount >= 3);
     if (filtered.length === 0) {
-      // Fallback: best 2-theory signals, capped at 5
       filtered = signals.filter(s => s.theoryCount >= 2).slice(0, 5);
     }
   } else if (risk === 2) {
     filtered = signals.filter(s => s.theoryCount >= 2);
   } else {
-    filtered = signals; // YOLO — show everything
+    // YOLO — multi-theory first, then single-theory fill
+    filtered = [...signals, ...singleTheorySignals];
   }
 
   return new Response(
