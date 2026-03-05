@@ -613,8 +613,26 @@ async function fetchLivePrices() {
   const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
   const forexAssets  = UNIVERSE.filter(a => a.type === "forex");
 
-  // Yahoo uses BTC-USD, ETH-USD etc for crypto; EURUSD=X for forex
-  const cryptoYahoo = cryptoAssets.map(a => `${a.id.replace("USD","-USD")}`);
+  // Explicit Yahoo ticker map for crypto (Yahoo uses short symbols like BTC-USD)
+  const cryptoYahooMap = {
+    "BTCUSD":   "BTC-USD",
+    "ETHUSD":   "ETH-USD",
+    "SOLUSD":   "SOL-USD",
+    "BNBUSD":   "BNB-USD",
+    "XRPUSD":   "XRP-USD",
+    "ADAUSD":   "ADA-USD",
+    "AVAXUSD":  "AVAX-USD",
+    "LINKUSD":  "LINK-USD",
+    "DOGEUSD":  "DOGE-USD",
+    "SHIBAUSD": "SHIB-USD",
+    "PEPEUSD":  "PEPE-USD",
+    "SUIUSD":   "SUI-USD",
+  };
+  // Reverse map: Yahoo symbol → our asset ID
+  const yahooToCryptoId = Object.fromEntries(Object.entries(cryptoYahooMap).map(([k,v]) => [v, k]));
+
+  // Forex: Yahoo uses EURUSD=X format — matches our IDs directly
+  const cryptoYahoo = cryptoAssets.map(a => cryptoYahooMap[a.id] || `${a.id.slice(0,-3)}-USD`);
   const forexYahoo  = forexAssets.map(a => `${a.id}=X`);
   const cfSymbols   = [...cryptoYahoo, ...forexYahoo].join(",");
 
@@ -626,15 +644,11 @@ async function fetchLivePrices() {
     const d = await r.json();
     for (const q of (d?.quoteResponse?.result || [])) {
       if (!q.regularMarketPrice || q.regularMarketPrice <= 0) continue;
-      // Match back to our asset IDs
       const sym = q.symbol;
       if (sym.endsWith("-USD")) {
-        // Crypto: BTC-USD → BTCUSD
-        const id = sym.replace("-USD", "USD");
-        const asset = cryptoAssets.find(a => a.id === id);
-        if (asset) prices[asset.id] = q.regularMarketPrice;
+        const id = yahooToCryptoId[sym];
+        if (id) prices[id] = q.regularMarketPrice;
       } else if (sym.endsWith("=X")) {
-        // Forex: EURUSD=X → EURUSD
         const id = sym.replace("=X", "");
         const asset = forexAssets.find(a => a.id === id);
         if (asset) prices[asset.id] = q.regularMarketPrice;
