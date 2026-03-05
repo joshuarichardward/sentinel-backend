@@ -634,13 +634,31 @@ async function fetchLivePrices() {
     }
   } catch {}
 
-  // ── STOCKS via Polygon.io previous close (free tier, accurate) ────────────
+  // ── STOCKS via Twelve Data (real-time, free tier) ─────────────────────────
   const stockAssets  = UNIVERSE.filter(a => a.type === "stock");
+  const twelveKey    = process.env.TWELVE_DATA_API_KEY;
   const polygonKey   = process.env.POLYGON_API_KEY;
   const finnhubKey   = process.env.FINNHUB_API_KEY;
 
-  if (polygonKey) {
-    // Polygon: batch snapshot endpoint — all tickers in one call
+  if (twelveKey) {
+    // Twelve Data: batch price endpoint — all tickers in one call
+    try {
+      const tickers = stockAssets.map(a => a.id).join(",");
+      const r = await fetch(
+        `https://api.twelvedata.com/price?symbol=${tickers}&apikey=${twelveKey}`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      const d = await r.json();
+      for (const a of stockAssets) {
+        // Single ticker returns { price: "123.45" }
+        // Multiple tickers returns { TICKER: { price: "123.45" } }
+        const entry = d[a.id] || d;
+        const price = parseFloat(entry?.price);
+        if (price && price > 0) prices[a.id] = price;
+      }
+    } catch {}
+  } else if (polygonKey) {
+    // Fallback: Polygon snapshot (15min delayed)
     try {
       const tickers = stockAssets.map(a => a.id).join(",");
       const r = await fetch(
@@ -654,7 +672,7 @@ async function fetchLivePrices() {
       }
     } catch {}
   } else if (finnhubKey && finnhubKey !== "demo") {
-    // Fallback: Finnhub individual quotes
+    // Last resort: Finnhub
     await Promise.all(stockAssets.map(async (a) => {
       try {
         const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(4000) });
