@@ -605,17 +605,72 @@ function combineSignals(asset, dBars, hBars) {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Fetch live prices from Coinbase (crypto), exchangerate (forex), Yahoo (stocks)
+async function fetchLivePrices() {
+  const prices = {};
+
+  try {
+    // ── CRYPTO via Coinbase ──────────────────────────────────────────────────
+    const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
+    await Promise.all(cryptoAssets.map(async (a) => {
+      try {
+        const r = await fetch(`https://api.coinbase.com/v2/prices/${a.id}/spot`);
+        const d = await r.json();
+        if (d.data?.amount) prices[a.id] = parseFloat(d.data.amount);
+      } catch {}
+    }));
+
+    // ── FOREX via exchangerate-api (free tier) ────────────────────────────────
+    try {
+      const r = await fetch("https://open.er-api.com/v6/latest/USD");
+      const d = await r.json();
+      if (d.rates) {
+        const rates = d.rates;
+        const usd = 1;
+        for (const a of UNIVERSE.filter(x => x.type === "forex")) {
+          // Build price from USD base
+          const [base, quote] = [a.id.slice(0,3), a.id.slice(3,6)];
+          const baseRate  = base  === "USD" ? 1 : (rates[base]  ? 1 / rates[base]  : null);
+          const quoteRate = quote === "USD" ? 1 : (rates[quote] ? 1 / rates[quote] : null);
+          if (baseRate && quoteRate) prices[a.id] = parseFloat((quoteRate / baseRate * (base === "USD" ? rates[quote] : 1 / rates[base])).toFixed(5));
+          // Simpler: just get direct cross
+          if (base === "USD" && rates[quote]) prices[a.id] = parseFloat(rates[quote].toFixed(5));
+          else if (quote === "USD" && rates[base]) prices[a.id] = parseFloat((1 / rates[base]).toFixed(5));
+          else if (rates[base] && rates[quote]) prices[a.id] = parseFloat((rates[quote] / rates[base]).toFixed(5));
+        }
+      }
+    } catch {}
+
+    // ── STOCKS via Yahoo Finance ──────────────────────────────────────────────
+    const stockAssets = UNIVERSE.filter(a => a.type === "stock");
+    const symbols = stockAssets.map(a => a.id).join(",");
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice`);
+      const d = await r.json();
+      for (const q of (d.quoteResponse?.result || [])) {
+        if (q.regularMarketPrice) prices[q.symbol] = q.regularMarketPrice;
+      }
+    } catch {}
+  } catch {}
+
+  return prices;
+}
+
 export async function handler(req) {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
   }
 
+  // Fetch live prices — fall back to hardcoded base if unavailable
+  const livePrices = await fetchLivePrices();
+
   const signals = [];
   const seen    = new Set(); // key: assetId-direction-timeframe (one signal per combo)
 
   for (const asset of UNIVERSE) {
-    const dBars = makeBars(asset.base, asset.vol, 30);
-    const hBars = makeBars(asset.base, asset.vol * 0.45, 30);
+    const base  = livePrices[asset.id] || asset.base;
+    const dBars = makeBars(base, asset.vol, 30);
+    const hBars = makeBars(base, asset.vol * 0.45, 30);
 
     for (const sig of combineSignals(asset, dBars, hBars)) {
       const key = `${asset.id}-${sig.direction}-${sig.timeframe}`;
@@ -640,7 +695,8 @@ export async function handler(req) {
   if (risk === 3) {
     const seenSingle = new Set();
     for (const asset of UNIVERSE) {
-      for (const [bars, tf] of [[makeBars(asset.base, asset.vol, 30), "Daily"], [makeBars(asset.base, asset.vol * 0.45, 30), "4H"]]) {
+      const liveBase = livePrices[asset.id] || asset.base;
+      for (const [bars, tf] of [[makeBars(liveBase, asset.vol, 30), "Daily"], [makeBars(liveBase, asset.vol * 0.45, 30), "4H"]]) {
         const all = [
           ...wyckoffAnalysis(bars),
           ...elliottWaveAnalysis(bars),
