@@ -860,29 +860,20 @@ async function fetchLivePrices() {
   const prices     = {};
   const finnhubKey = process.env.FINNHUB_API_KEY;
 
-  // ── STOCKS via Finnhub ────────────────────────────────────────────────────
+  // ── STOCKS via Yahoo Finance bulk quote (single call for all symbols) ────
   const stockAssets = UNIVERSE.filter(a => a.type === "stock");
-  if (finnhubKey) {
-    await Promise.all(stockAssets.map(async (a) => {
-      try {
-        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(6000) });
-        const d = await r.json();
-        if (d.c && d.c > 0) prices[a.id] = d.c;
-      } catch {}
-    }));
-  }
-  // Fallback: Yahoo Finance for any stocks Finnhub missed
-  const stillMissing = stockAssets.filter(a => !prices[a.id]);
-  if (stillMissing.length > 0) {
-    try {
-      const syms = stillMissing.map(a => a.id).join(",");
-      const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice`, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
-      const d = await r.json();
-      for (const q of (d?.quoteResponse?.result || [])) {
-        if (q.regularMarketPrice > 0) prices[q.symbol] = q.regularMarketPrice;
-      }
-    } catch {}
-  }
+  try {
+    const syms = stockAssets.map(a => a.id).join(",");
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice`,
+      { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    for (const q of (d?.quoteResponse?.result || [])) {
+      if (q.regularMarketPrice > 0) prices[q.symbol] = q.regularMarketPrice;
+    }
+  } catch {}
+  // No spot-fill — if Yahoo didn't return a price, the asset is skipped
 
   // ── CRYPTO via CoinGecko ──────────────────────────────────────────────────
   try {
@@ -937,57 +928,37 @@ const SCAN_SEED = [
 ];
 
 async function fetchDynamicStocks(finnhubKey, livePrices) {
-  if (!finnhubKey) return [];
-
-  // Batch-quote all seed symbols — get current price + today's volume
-  // Finnhub quote returns: c (current), h, l, o, pc (prev close), v (volume today — not always available)
-  // We'll use price change % as a proxy for "in play" when volume isn't available
-
-  const quotes = [];
-  const BATCH = 15; // stay well under 60/min rate limit (we have other calls too)
-
-  for (let i = 0; i < Math.min(SCAN_SEED.length, 60); i += BATCH) {
-    const batch = SCAN_SEED.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map(async sym => {
-      try {
-        const r = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`,
-          { signal: AbortSignal.timeout(5000) }
-        );
-        const d = await r.json();
-        if (d.c && d.c > 0 && d.pc && d.pc > 0) {
-          const changePct = Math.abs((d.c - d.pc) / d.pc * 100);
-          return { id: sym, price: d.c, changePct, prevClose: d.pc };
-        }
-      } catch {}
-      return null;
-    }));
-    results.filter(Boolean).forEach(q => quotes.push(q));
-    // Small delay between batches to respect rate limits
-    if (i + BATCH < SCAN_SEED.length) await new Promise(r => setTimeout(r, 300));
-  }
-
-  // Sort by absolute % change — biggest movers are "in play"
-  quotes.sort((a, b) => b.changePct - a.changePct);
-
-  // Take top 25 movers
-  const topMovers = quotes.slice(0, 25);
-
-  // Convert to asset objects compatible with our engine
-  // If already in UNIVERSE, skip (already covered)
   const universeIds = new Set(UNIVERSE.map(a => a.id));
+  const movers = [];
 
-  return topMovers
-    .filter(q => !universeIds.has(q.id))
-    .map(q => ({
-      id:     q.id,
-      name:   q.id,          // just use ticker as name for dynamic assets
-      sector: "Top Mover",
-      type:   "stock",
-      vol:    Math.min(0.15, Math.max(0.03, q.changePct / 100 * 2)), // estimate vol from move
-      base:   q.prevClose,
-      dynamic: true,         // flag as dynamically discovered
-    }));
+  // ── Strategy: single Yahoo Finance "most active" call — one request, top movers ──
+  try {
+    const r = await fetch(
+      'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=false&scrIds=most_actives&count=30&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketPreviousClose',
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(7000) }
+    );
+    const d = await r.json();
+    const quotes = d?.finance?.result?.[0]?.quotes || [];
+    for (const q of quotes) {
+      if (!q.symbol || universeIds.has(q.symbol)) continue;
+      // Skip ETFs/funds — day traders want individual stocks
+      if (q.symbol.includes('.') || q.symbol.length > 5) continue;
+      const changePct = Math.abs(q.regularMarketChangePercent || 0);
+      if (changePct < 1) continue; // only assets moving >1%
+      movers.push({
+        id:      q.symbol,
+        name:    q.symbol,
+        sector:  "Top Mover",
+        type:    "stock",
+        vol:     Math.min(0.15, Math.max(0.03, changePct / 100)),
+        base:    q.regularMarketPreviousClose || q.regularMarketPrice,
+        dynamic: true,
+      });
+      if (movers.length >= 15) break; // cap at 15 dynamic assets
+    }
+  } catch {}
+
+  return movers;
 }
 
 export async function handler(req) {
@@ -1028,16 +999,21 @@ export async function handler(req) {
   const stockAssets  = ALL_ASSETS.filter(a => a.type === "stock");
   const cryptoAssets = ALL_ASSETS.filter(a => a.type === "crypto");
 
-  await Promise.all([
-    ...stockAssets.map(async a => {
-      const bars = await fetchStockBars(a.id, finnhubKey);
-      if (bars) realBarsCache[a.id] = bars;
-    }),
-    ...cryptoAssets.map(async a => {
-      const bars = await fetchCryptoBars(a.id);
-      if (bars) realBarsCache[a.id] = bars;
-    }),
-  ]);
+  // Process in batches to avoid overwhelming Railway's connection limit
+  const batchExec = async (items, fn, size = 8) => {
+    for (let i = 0; i < items.length; i += size) {
+      await Promise.all(items.slice(i, i + size).map(fn));
+    }
+  };
+
+  await batchExec(stockAssets, async a => {
+    const bars = await fetchStockBars(a.id, finnhubKey);
+    if (bars) realBarsCache[a.id] = bars;
+  });
+  await batchExec(cryptoAssets, async a => {
+    const bars = await fetchCryptoBars(a.id);
+    if (bars) realBarsCache[a.id] = bars;
+  });
   for (const [assetId, bars] of Object.entries(forexBars)) {
     realBarsCache[assetId] = bars;
   }
