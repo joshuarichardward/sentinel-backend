@@ -691,8 +691,10 @@ async function fetchLivePrices() {
   const finnhubKey  = process.env.FINNHUB_API_KEY;
   const twelveKey   = process.env.TWELVE_DATA_API_KEY;
 
-  // ── STOCKS via Finnhub ────────────────────────────────────────────────────
+  // ── STOCKS via Finnhub (with Polygon fallback) ───────────────────────────
   const stockAssets = UNIVERSE.filter(a => a.type === "stock");
+  const polygonKey  = process.env.POLYGON_API_KEY;
+
   if (finnhubKey) {
     await Promise.all(stockAssets.map(async (a) => {
       try {
@@ -704,6 +706,39 @@ async function fetchLivePrices() {
         if (d.c && d.c > 0) prices[a.id] = d.c;
       } catch {}
     }));
+  }
+
+  // Fallback: use Polygon for any stocks that Finnhub missed
+  const missingStocks = stockAssets.filter(a => !prices[a.id]);
+  if (missingStocks.length > 0 && polygonKey) {
+    await Promise.all(missingStocks.map(async (a) => {
+      try {
+        const r = await fetch(
+          `https://api.polygon.io/v2/last/trade/${a.id}?apiKey=${polygonKey}`,
+          { signal: AbortSignal.timeout(6000) }
+        );
+        const d = await r.json();
+        const price = d?.results?.p;
+        if (price && price > 0) prices[a.id] = price;
+      } catch {}
+    }));
+  }
+
+  // Fallback 2: Yahoo Finance for anything still missing
+  const stillMissing = stockAssets.filter(a => !prices[a.id]);
+  if (stillMissing.length > 0) {
+    try {
+      const syms = stillMissing.map(a => a.id).join(",");
+      const yhHeaders = { "User-Agent": "Mozilla/5.0", "Accept": "application/json" };
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice`,
+        { headers: yhHeaders, signal: AbortSignal.timeout(8000) }
+      );
+      const d = await r.json();
+      for (const q of (d?.quoteResponse?.result || [])) {
+        if (q.regularMarketPrice > 0) prices[q.symbol] = q.regularMarketPrice;
+      }
+    } catch {}
   }
 
   // ── CRYPTO via CoinGecko (free, no key needed) ────────────────────────────
