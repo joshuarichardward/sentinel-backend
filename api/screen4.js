@@ -538,27 +538,142 @@ function rsiDivergenceAnalysis(bars) {
   return results;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THEORY 4: MOMENTUM BREAKOUT
+// Price breaks above/below a key level on above-average volume
+// This is the primary day-trading setup — fires far more frequently than
+// Wyckoff/Elliott on real data
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function momentumBreakoutAnalysis(bars) {
+  if (!bars || bars.length < 15) return [];
+  const results = [];
+
+  const last   = bars[bars.length - 1];
+  const prev   = bars[bars.length - 2];
+  const atr    = calcATR(bars) || last.c * 0.02;
+  const vAvg   = volAvg(bars, 10);
+
+  // Key levels: highest high and lowest low of prior 10 bars (excluding last)
+  const lookback = bars.slice(-11, -1);
+  const keyHigh  = Math.max(...lookback.map(b => b.h));
+  const keyLow   = Math.min(...lookback.map(b => b.l));
+
+  // ── BULLISH BREAKOUT ──────────────────────────────────────────────────────
+  // Last bar closes above key high on elevated volume
+  if (last.c > keyHigh &&
+      last.c > last.o &&                     // green bar
+      last.v > vAvg * 1.3 &&                 // above-average volume
+      (last.c - last.l) > atr * 0.5) {       // meaningful bar size
+    const rvol = parseFloat((last.v / vAvg).toFixed(1));
+    results.push({
+      theory:    "Momentum",
+      setup:     "Bullish Breakout",
+      direction: "L",
+      strength:  last.v > vAvg * 2 ? 88 : last.v > vAvg * 1.5 ? 82 : 74,
+      detail:    `Price closed above ${keyHigh.toFixed(4)} resistance on ${rvol}x average volume. Breakout with momentum confirmation.`,
+    });
+  }
+
+  // ── BEARISH BREAKDOWN ─────────────────────────────────────────────────────
+  if (last.c < keyLow &&
+      last.c < last.o &&                     // red bar
+      last.v > vAvg * 1.3 &&
+      (last.h - last.c) > atr * 0.5) {
+    const rvol = parseFloat((last.v / vAvg).toFixed(1));
+    results.push({
+      theory:    "Momentum",
+      setup:     "Bearish Breakdown",
+      direction: "S",
+      strength:  last.v > vAvg * 2 ? 88 : last.v > vAvg * 1.5 ? 82 : 74,
+      detail:    `Price closed below ${keyLow.toFixed(4)} support on ${rvol}x average volume. Breakdown with momentum confirmation.`,
+    });
+  }
+
+  // ── BULLISH CONTINUATION (higher highs + higher lows pattern) ────────────
+  const last5 = bars.slice(-5);
+  const highs  = last5.map(b => b.h);
+  const lows   = last5.map(b => b.l);
+  const risingHighs = highs.every((h, i) => i === 0 || h >= highs[i - 1] * 0.998);
+  const risingLows  = lows.every((l, i)  => i === 0 || l >= lows[i - 1]  * 0.998);
+  if (risingHighs && risingLows && last.v > vAvg * 1.2 && last.c > last.o) {
+    results.push({
+      theory:    "Momentum",
+      setup:     "Trending Higher",
+      direction: "L",
+      strength:  76,
+      detail:    `5-bar sequence of higher highs and higher lows. Trend continuation on ${(last.v/vAvg).toFixed(1)}x volume.`,
+    });
+  }
+
+  // ── BEARISH CONTINUATION (lower highs + lower lows pattern) ─────────────
+  const fallingHighs = highs.every((h, i) => i === 0 || h <= highs[i - 1] * 1.002);
+  const fallingLows  = lows.every((l, i)  => i === 0 || l <= lows[i - 1]  * 1.002);
+  if (fallingHighs && fallingLows && last.v > vAvg * 1.2 && last.c < last.o) {
+    results.push({
+      theory:    "Momentum",
+      setup:     "Trending Lower",
+      direction: "S",
+      strength:  76,
+      detail:    `5-bar sequence of lower highs and lower lows. Trend continuation on ${(last.v/vAvg).toFixed(1)}x volume.`,
+    });
+  }
+
+  // ── VOLUME SPIKE REVERSAL ─────────────────────────────────────────────────
+  // Huge volume bar + wick rejection = smart money reversal
+  const wickUp   = last.h - Math.max(last.o, last.c);
+  const wickDown = Math.min(last.o, last.c) - last.l;
+  const body     = Math.abs(last.c - last.o);
+
+  if (last.v > vAvg * 2.5) {
+    if (wickDown > body * 2 && last.c > last.o) {
+      // Long lower wick on huge volume = buyers overwhelmed sellers
+      results.push({
+        theory:    "Momentum",
+        setup:     "Volume Spike Reversal — Bullish",
+        direction: "L",
+        strength:  85,
+        detail:    `${(last.v/vAvg).toFixed(1)}x volume spike with bullish rejection wick. Institutional absorption of selling pressure.`,
+      });
+    }
+    if (wickUp > body * 2 && last.c < last.o) {
+      // Long upper wick on huge volume = sellers overwhelmed buyers
+      results.push({
+        theory:    "Momentum",
+        setup:     "Volume Spike Reversal — Bearish",
+        direction: "S",
+        strength:  85,
+        detail:    `${(last.v/vAvg).toFixed(1)}x volume spike with bearish rejection wick. Institutional distribution detected.`,
+      });
+    }
+  }
+
+  return results;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SIGNAL COMBINER
 // Only fires when 2+ theories agree on direction
 // Scores by theory alignment count + individual theory strength
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function combineSignals(asset, dBars, hBars, livePrice = null) {
+function combineSignals(asset, dBars, hBars, livePrice = null, minTheories = 1) {
   const signals = [];
 
   for (const [bars, tf] of [[dBars, "Daily"], [hBars, "4H"]]) {
-    if (!bars || bars.length < 20) continue;
+    if (!bars || bars.length < 15) continue;
 
     const wyckoff  = wyckoffAnalysis(bars);
     const elliott  = elliottWaveAnalysis(bars);
     const rsiDiv   = rsiDivergenceAnalysis(bars);
-    const all      = [...wyckoff, ...elliott, ...rsiDiv];
+    const momentum = momentumBreakoutAnalysis(bars);
+    const all      = [...wyckoff, ...elliott, ...rsiDiv, ...momentum];
 
     // Group by direction
     for (const dir of ["L", "S"]) {
       const aligned = all.filter(r => r.direction === dir);
-      if (aligned.length < 2) continue; // need 2+ theories to agree
+      if (aligned.length < minTheories) continue;
 
       const theories   = [...new Set(aligned.map(r => r.theory))];
       const topStrength = Math.max(...aligned.map(r => r.strength));
@@ -789,6 +904,92 @@ async function fetchLivePrices() {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DYNAMIC STOCK SCREENER
+// Fetches top movers by relative volume from the market in real time
+// These are the stocks "in play" today — the ones day traders actually trade
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// A curated seed list of high-vol day trading stocks to quote-scan
+// We check relative volume for all of these and pick the top movers
+const SCAN_SEED = [
+  // Mega cap / index
+  "SPY","QQQ","IWM","DIA","AAPL","MSFT","AMZN","META","GOOGL","NVDA","TSLA","AMD",
+  // High beta tech
+  "PLTR","COIN","MSTR","HOOD","SOFI","AFRM","UPST","SMCI","ARM","INTC","MU","AVGO",
+  // Crypto-adjacent
+  "MARA","RIOT","CLSK","BTBT","HUT","CIFR",
+  // Space / defence
+  "RKLB","ASTS","LUNR","ACHR","JOBY","LILM",
+  // Quantum
+  "IONQ","RGTI","QBTS","QUBT",
+  // AI / software
+  "SOUN","BBAI","AIXI","GFAI","IREN",
+  // Biotech / speculative
+  "SAVA","NVAX","MRNA","BNTX","PLUG","FCEL","BLNK","CHPT",
+  // Fintech
+  "OPEN","LMND","NRDS","UPWK","DOCN",
+  // Other high-vol favourites
+  "NIO","XPEV","LI","RIVN","LCID","GME","AMC","BBBY","SPCE","CLOV",
+  // Sector ETFs that day traders use
+  "SOXS","SOXL","TQQQ","SQQQ","LABU","LABD","UVXY","VIXY",
+];
+
+async function fetchDynamicStocks(finnhubKey, livePrices) {
+  if (!finnhubKey) return [];
+
+  // Batch-quote all seed symbols — get current price + today's volume
+  // Finnhub quote returns: c (current), h, l, o, pc (prev close), v (volume today — not always available)
+  // We'll use price change % as a proxy for "in play" when volume isn't available
+
+  const quotes = [];
+  const BATCH = 15; // stay well under 60/min rate limit (we have other calls too)
+
+  for (let i = 0; i < Math.min(SCAN_SEED.length, 60); i += BATCH) {
+    const batch = SCAN_SEED.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(async sym => {
+      try {
+        const r = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        const d = await r.json();
+        if (d.c && d.c > 0 && d.pc && d.pc > 0) {
+          const changePct = Math.abs((d.c - d.pc) / d.pc * 100);
+          return { id: sym, price: d.c, changePct, prevClose: d.pc };
+        }
+      } catch {}
+      return null;
+    }));
+    results.filter(Boolean).forEach(q => quotes.push(q));
+    // Small delay between batches to respect rate limits
+    if (i + BATCH < SCAN_SEED.length) await new Promise(r => setTimeout(r, 300));
+  }
+
+  // Sort by absolute % change — biggest movers are "in play"
+  quotes.sort((a, b) => b.changePct - a.changePct);
+
+  // Take top 25 movers
+  const topMovers = quotes.slice(0, 25);
+
+  // Convert to asset objects compatible with our engine
+  // If already in UNIVERSE, skip (already covered)
+  const universeIds = new Set(UNIVERSE.map(a => a.id));
+
+  return topMovers
+    .filter(q => !universeIds.has(q.id))
+    .map(q => ({
+      id:     q.id,
+      name:   q.id,          // just use ticker as name for dynamic assets
+      sector: "Top Mover",
+      type:   "stock",
+      vol:    Math.min(0.15, Math.max(0.03, q.changePct / 100 * 2)), // estimate vol from move
+      base:   q.prevClose,
+      dynamic: true,         // flag as dynamically discovered
+    }));
+}
+
 export async function handler(req) {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
@@ -810,12 +1011,22 @@ export async function handler(req) {
     }
   }
 
+  // ── Fetch dynamic top movers ─────────────────────────────────────────────
+  const dynamicAssets = await fetchDynamicStocks(finnhubKey, livePrices);
+
+  // Full asset list: static universe + dynamic movers
+  const ALL_ASSETS = [...UNIVERSE, ...dynamicAssets];
+
+  // Store live prices for dynamic assets
+  for (const a of dynamicAssets) {
+    if (!livePrices[a.id] && a.base) livePrices[a.id] = a.base;
+  }
+
   // ── Pre-fetch all real bars in parallel ─────────────────────────────────
   const realBarsCache = {};
 
-  // Stocks: fetch all in parallel
-  const stockAssets = UNIVERSE.filter(a => a.type === "stock");
-  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
+  const stockAssets  = ALL_ASSETS.filter(a => a.type === "stock");
+  const cryptoAssets = ALL_ASSETS.filter(a => a.type === "crypto");
 
   await Promise.all([
     ...stockAssets.map(async a => {
@@ -827,7 +1038,6 @@ export async function handler(req) {
       if (bars) realBarsCache[a.id] = bars;
     }),
   ]);
-  // Forex bars already fetched above
   for (const [assetId, bars] of Object.entries(forexBars)) {
     realBarsCache[assetId] = bars;
   }
@@ -835,7 +1045,7 @@ export async function handler(req) {
   const signals = [];
   const seen    = new Set();
 
-  for (const asset of UNIVERSE) {
+  for (const asset of ALL_ASSETS) {
     // ── REAL BAR ANALYSIS ─────────────────────────────────────────────────
     let dBars = null, hBars = null;
     const cached = realBarsCache[asset.id];
@@ -846,7 +1056,7 @@ export async function handler(req) {
     if (!dBars || dBars.length < 10) continue;
     if (!hBars || hBars.length < 10) hBars = dBars; // use daily as fallback for 4H only
 
-    for (const sig of combineSignals(asset, dBars, hBars, livePrice)) {
+    for (const sig of combineSignals(asset, dBars, hBars, livePrice, 1)) {
       const key = `${asset.id}-${sig.direction}-${sig.timeframe}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -864,7 +1074,7 @@ export async function handler(req) {
   const singleTheorySignals = [];
   if (risk === 3) {
     const seenSingle = new Set();
-    for (const asset of UNIVERSE) {
+    for (const asset of ALL_ASSETS) {
       const liveBase = livePrices[asset.id] || asset.base;
 
       // Use cached real bars, fall back to synthetic
@@ -919,18 +1129,25 @@ export async function handler(req) {
     }
   }
 
+  // Risk tiers:
+  // risk=1 (Grandma)  — 3+ theories confirming (rare, high conviction)
+  // risk=2 (Divorce)  — 2+ theories confirming
+  // risk=3 (YOLO)     — any single theory signal, all assets
   let filtered;
   if (risk === 1) {
     filtered = signals.filter(s => s.theoryCount >= 3);
     if (filtered.length === 0) filtered = signals.filter(s => s.theoryCount >= 2).slice(0, 5);
   } else if (risk === 2) {
     filtered = signals.filter(s => s.theoryCount >= 2);
+    if (filtered.length === 0) filtered = signals.filter(s => s.theoryCount >= 1).slice(0, 10);
   } else {
+    // YOLO — everything, including single-theory, sorted by strength
     filtered = [...signals, ...singleTheorySignals];
+    filtered.sort((a, b) => b.edgeScore - a.edgeScore);
   }
 
   return new Response(
-    JSON.stringify({ signals: filtered, scored: filtered.length, universe: UNIVERSE.length, ts: Date.now() }),
+    JSON.stringify({ signals: filtered, scored: filtered.length, universe: ALL_ASSETS.length, dynamic: dynamicAssets.length, ts: Date.now() }),
     { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } }
   );
 }
