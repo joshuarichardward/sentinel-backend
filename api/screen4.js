@@ -68,11 +68,12 @@ const UNIVERSE = [
   { id:"TSLA",    name:"Tesla",           sector:"EV",            type:"stock",  vol:0.05,   base:285     },
   { id:"HOOD",    name:"Robinhood",       sector:"Fintech",       type:"stock",  vol:0.06,   base:38      },
   // OPTIONS — Black-Scholes priced calls on high-vol underlyings
-  { id:"NVDA_C",  name:"NVDA Calls",      sector:"Options",       type:"option", vol:0.65,   base:118,    strike:125,  expDays:7,   underlying:"NVDA" },
-  { id:"TSLA_C",  name:"TSLA Calls",      sector:"Options",       type:"option", vol:0.72,   base:285,    strike:295,  expDays:5,   underlying:"TSLA" },
-  { id:"PLTR_C",  name:"PLTR Calls",      sector:"Options",       type:"option", vol:0.68,   base:82,     strike:87,   expDays:7,   underlying:"PLTR" },
-  { id:"MSTR_C",  name:"MSTR Calls",      sector:"Options",       type:"option", vol:0.90,   base:295,    strike:315,  expDays:3,   underlying:"MSTR" },
-  { id:"COIN_C",  name:"COIN Calls",      sector:"Options",       type:"option", vol:0.75,   base:195,    strike:210,  expDays:7,   underlying:"COIN" },
+  // Strikes set ~3-5% OTM from current live base prices
+  { id:"NVDA_C",  name:"NVDA Calls",      sector:"Options",       type:"option", vol:0.65,   base:183,    strike:192,  expDays:7,   underlying:"NVDA" },
+  { id:"TSLA_C",  name:"TSLA Calls",      sector:"Options",       type:"option", vol:0.72,   base:405,    strike:425,  expDays:5,   underlying:"TSLA" },
+  { id:"PLTR_C",  name:"PLTR Calls",      sector:"Options",       type:"option", vol:0.68,   base:152,    strike:160,  expDays:7,   underlying:"PLTR" },
+  { id:"MSTR_C",  name:"MSTR Calls",      sector:"Options",       type:"option", vol:0.90,   base:139,    strike:146,  expDays:3,   underlying:"MSTR" },
+  { id:"COIN_C",  name:"COIN Calls",      sector:"Options",       type:"option", vol:0.75,   base:205,    strike:215,  expDays:7,   underlying:"COIN" },
 ];
 
 
@@ -112,7 +113,8 @@ function blackScholesPut(S, K, T, r, sigma) {
 // Returns { entry, target, stop, upside, rr }
 function priceOptionSignal(asset, liveSpot, direction) {
   const S      = liveSpot || asset.base;
-  const K      = asset.strike;
+  // Auto-set strike to 4% OTM from live spot so it's always realistic
+  const K      = S * (direction === "L" ? 1.04 : 0.96);
   const T      = asset.expDays / 365;
   const r      = 0.053;          // ~5.3% risk-free rate (current Fed funds)
   const sigma  = asset.vol;      // IV stored on asset
@@ -143,6 +145,7 @@ function priceOptionSignal(asset, liveSpot, direction) {
     upside:     Math.max(10, Math.min(500, upsidePct)),
     riskReward: Math.max(0.5, rrRatio),
     iv:         Math.round(sigma * 100),
+    strike:     parseFloat(K.toFixed(2)),
   };
 }
 
@@ -828,7 +831,7 @@ export async function handler(req) {
           catalystScore: 8,
           timeToTarget: `${asset.expDays}d expiry`,
           catalysts:    [
-            `IV: ${priced.iv}%  ·  Strike: $${asset.strike}  ·  Underlying: $${underlyingPrice.toFixed(2)}`,
+            `IV: ${priced.iv}%  ·  Strike: $${priced.strike}  ·  Underlying: $${underlyingPrice.toFixed(2)}`,
             `Black-Scholes priced ${dir === "L" ? "call" : "put"} — ${asset.expDays}-day expiry`,
           ],
           edgeScore:    75,
@@ -871,6 +874,7 @@ export async function handler(req) {
   if (risk === 3) {
     const seenSingle = new Set();
     for (const asset of UNIVERSE) {
+      if (asset.type === "option") continue; // options handled separately with BS pricing
       const liveBase = livePrices[asset.id] || asset.base;
       for (const [bars, tf] of [[makeBars(liveBase, asset.vol, 30), "Daily"], [makeBars(liveBase, asset.vol * 0.45, 30), "4H"]]) {
         const all = [
@@ -884,7 +888,7 @@ export async function handler(req) {
           seenSingle.add(key);
           // Skip if already covered by a multi-theory signal
           if (seen.has(`${asset.id}-${r.direction}-${tf}`)) continue;
-          const entry  = livePrice || bars[bars.length - 1].c;
+          const entry  = liveBase || bars[bars.length - 1].c;
           const atr    = calcATR(bars) || entry * 0.02;
           const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
           const maxMove = entry * (asset.type === "forex" ? 0.03 : asset.type === "crypto" ? 0.15 : 0.25);
@@ -910,6 +914,7 @@ export async function handler(req) {
             catalysts: [`${r.setup}: ${r.detail}`],
             edgeScore: r.strength, theoryCount: 1, theories: [r.theory],
             edges: [r.setup], timeframe: tf, sector: asset.sector, type: asset.type,
+            assetType: asset.type,
             timestamp: Date.now(),
           });
         }
