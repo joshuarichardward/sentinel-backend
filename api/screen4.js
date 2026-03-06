@@ -762,24 +762,25 @@ function normaliseBars(raw) {
   })).filter(b => b.c > 0);
 }
 
-// Fetch real bars for a stock from Finnhub
+// Fetch real bars for a stock from Yahoo Finance (free, no key required)
 // Returns { daily: bars[], h4: bars[] } or null
-async function fetchStockBars(symbol, finnhubKey) {
-  if (!finnhubKey) return null;
-  const now   = Math.floor(Date.now() / 1000);
-  const d60   = now - 60 * 24 * 3600;   // 60 days for daily
-  const d14   = now - 14 * 24 * 3600;   // 14 days for 4H (gives ~84 bars)
-
+async function fetchStockBars(symbol) {
   try {
     const [rD, rH] = await Promise.all([
-      fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${d60}&to=${now}&token=${finnhubKey}`, { signal: AbortSignal.timeout(8000) }),
-      fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=240&from=${d14}&to=${now}&token=${finnhubKey}`, { signal: AbortSignal.timeout(8000) }),
+      fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=3mo`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }),
+      fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=4h&range=15d`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }),
     ]);
     const [dD, dH] = await Promise.all([rD.json(), rH.json()]);
 
     const toBarArr = d => {
-      if (!d || d.s !== 'ok' || !d.c) return [];
-      return d.t.map((_, i) => ({ o: d.o[i], h: d.h[i], l: d.l[i], c: d.c[i], v: d.v[i] }));
+      const r = d?.chart?.result?.[0];
+      if (!r) return [];
+      const { open, high, low, close, volume } = r.indicators.quote[0];
+      return r.timestamp.map((_, i) => ({
+        o: open[i], h: high[i], l: low[i], c: close[i], v: volume[i] ?? 1e6,
+      })).filter(b => b.c != null && b.c > 0);
     };
 
     const daily = toBarArr(dD);
@@ -1007,7 +1008,7 @@ export async function handler(req) {
   };
 
   await batchExec(stockAssets, async a => {
-    const bars = await fetchStockBars(a.id, finnhubKey);
+    const bars = await fetchStockBars(a.id);
     if (bars) realBarsCache[a.id] = bars;
   });
   await batchExec(cryptoAssets, async a => {
