@@ -685,37 +685,150 @@ function combineSignals(asset, dBars, hBars, livePrice = null) {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Fetch live prices from multiple sources
-async function fetchLivePrices() {
-  const prices = {};
-  const finnhubKey  = process.env.FINNHUB_API_KEY;
-  const twelveKey   = process.env.TWELVE_DATA_API_KEY;
+// ═══════════════════════════════════════════════════════════════════════════════
+// REAL BAR FETCHER
+// Fetches genuine OHLCV candles from live data sources
+// Stocks: Finnhub  |  Crypto: CoinGecko  |  Forex: Twelve Data
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  // ── STOCKS via Finnhub (with Polygon fallback) ───────────────────────────
+const COINGECKO_MAP = {
+  "BTCUSD":"bitcoin", "ETHUSD":"ethereum", "SOLUSD":"solana",
+  "BNBUSD":"binancecoin", "XRPUSD":"ripple", "ADAUSD":"cardano",
+  "AVAXUSD":"avalanche-2", "LINKUSD":"chainlink", "DOGEUSD":"dogecoin",
+  "SHIBAUSD":"shiba-inu", "PEPEUSD":"pepe", "SUIUSD":"sui",
+};
+
+const TWELVE_FOREX_MAP = {
+  "EURUSD":"EUR/USD", "GBPUSD":"GBP/USD", "USDJPY":"USD/JPY",
+  "AUDUSD":"AUD/USD", "USDCAD":"USD/CAD", "USDCHF":"USD/CHF",
+  "NZDUSD":"NZD/USD", "GBPJPY":"GBP/JPY", "EURGBP":"EUR/GBP",
+  "EURJPY":"EUR/JPY", "CADJPY":"CAD/JPY", "USDTRY":"USD/TRY",
+  "USDZAR":"USD/ZAR", "USDMXN":"USD/MXN",
+};
+
+// Convert raw OHLCV arrays into our standard bar format
+function normaliseBars(raw) {
+  return raw.map(b => ({
+    o: b.o, h: b.h, l: b.l, c: b.c,
+    v: b.v ?? 1e6,
+  })).filter(b => b.c > 0);
+}
+
+// Fetch real bars for a stock from Finnhub
+// Returns { daily: bars[], h4: bars[] } or null
+async function fetchStockBars(symbol, finnhubKey) {
+  if (!finnhubKey) return null;
+  const now   = Math.floor(Date.now() / 1000);
+  const d60   = now - 60 * 24 * 3600;   // 60 days for daily
+  const d14   = now - 14 * 24 * 3600;   // 14 days for 4H (gives ~84 bars)
+
+  try {
+    const [rD, rH] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${d60}&to=${now}&token=${finnhubKey}`, { signal: AbortSignal.timeout(8000) }),
+      fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=240&from=${d14}&to=${now}&token=${finnhubKey}`, { signal: AbortSignal.timeout(8000) }),
+    ]);
+    const [dD, dH] = await Promise.all([rD.json(), rH.json()]);
+
+    const toBarArr = d => {
+      if (!d || d.s !== 'ok' || !d.c) return [];
+      return d.t.map((_, i) => ({ o: d.o[i], h: d.h[i], l: d.l[i], c: d.c[i], v: d.v[i] }));
+    };
+
+    const daily = toBarArr(dD);
+    const h4    = toBarArr(dH);
+    if (daily.length < 10) return null;
+    return { daily, h4: h4.length >= 10 ? h4 : daily };
+  } catch { return null; }
+}
+
+// Fetch real bars for a crypto from CoinGecko
+// CoinGecko OHLC endpoint returns [timestamp, o, h, l, c] — no volume
+async function fetchCryptoBars(assetId) {
+  const geckoId = COINGECKO_MAP[assetId];
+  if (!geckoId) return null;
+  try {
+    // days=30 gives daily candles; days=3 gives hourly-ish candles for 4H
+    const [rD, rH] = await Promise.all([
+      fetch(`https://api.coingecko.com/api/v3/coins/${geckoId}/ohlc?vs_currency=usd&days=60`, { signal: AbortSignal.timeout(8000) }),
+      fetch(`https://api.coingecko.com/api/v3/coins/${geckoId}/ohlc?vs_currency=usd&days=7`, { signal: AbortSignal.timeout(8000) }),
+    ]);
+    const [dD, dH] = await Promise.all([rD.json(), rH.json()]);
+
+    const toBarArr = arr => Array.isArray(arr)
+      ? arr.map(([, o, h, l, c]) => ({ o, h, l, c, v: 1e6 }))
+      : [];
+
+    const daily = toBarArr(dD);
+    const h4    = toBarArr(dH);
+    if (daily.length < 10) return null;
+    return { daily, h4: h4.length >= 10 ? h4 : daily };
+  } catch { return null; }
+}
+
+// Fetch real bars for a forex pair from Twelve Data
+// We batch all forex pairs in two calls (daily + 4H) to stay within rate limits
+async function fetchAllForexBars(twelveKey) {
+  if (!twelveKey) return {};
+  const results = {};
+  const symbols = Object.values(TWELVE_FOREX_MAP).join(',');
+
+  try {
+    // Fetch daily bars — 60 candles per pair
+    const [rD, rH] = await Promise.all([
+      fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbols)}&interval=1day&outputsize=60&apikey=${twelveKey}`, { signal: AbortSignal.timeout(10000) }),
+      fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbols)}&interval=4h&outputsize=60&apikey=${twelveKey}`, { signal: AbortSignal.timeout(10000) }),
+    ]);
+    const [dD, dH] = await Promise.all([rD.json(), rH.json()]);
+
+    const extractBars = (data, sym) => {
+      // Twelve Data returns { [symbol]: { values: [...] } } for multiple symbols
+      // or { values: [...] } for single symbol
+      const entry = data[sym] || data;
+      const values = entry?.values;
+      if (!Array.isArray(values)) return [];
+      // values are newest-first — reverse to chronological order
+      return values.slice().reverse().map(v => ({
+        o: parseFloat(v.open), h: parseFloat(v.high),
+        l: parseFloat(v.low), c: parseFloat(v.close), v: 1e6,
+      })).filter(b => b.c > 0);
+    };
+
+    for (const [assetId, sym] of Object.entries(TWELVE_FOREX_MAP)) {
+      const daily = extractBars(dD, sym);
+      const h4    = extractBars(dH, sym);
+      if (daily.length >= 10) {
+        results[assetId] = { daily, h4: h4.length >= 10 ? h4 : daily };
+      }
+    }
+  } catch {}
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE SPOT PRICE FETCHER (for entry price + options pricing)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function fetchLivePrices() {
+  const prices     = {};
+  const finnhubKey = process.env.FINNHUB_API_KEY;
+
+  // ── STOCKS via Finnhub ────────────────────────────────────────────────────
   const stockAssets = UNIVERSE.filter(a => a.type === "stock");
   if (finnhubKey) {
     await Promise.all(stockAssets.map(async (a) => {
       try {
-        const r = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`,
-          { signal: AbortSignal.timeout(6000) }
-        );
+        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`, { signal: AbortSignal.timeout(6000) });
         const d = await r.json();
         if (d.c && d.c > 0) prices[a.id] = d.c;
       } catch {}
     }));
   }
-
   // Fallback: Yahoo Finance for any stocks Finnhub missed
   const stillMissing = stockAssets.filter(a => !prices[a.id]);
   if (stillMissing.length > 0) {
     try {
       const syms = stillMissing.map(a => a.id).join(",");
-      const yhHeaders = { "User-Agent": "Mozilla/5.0", "Accept": "application/json" };
-      const r = await fetch(
-        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice`,
-        { headers: yhHeaders, signal: AbortSignal.timeout(8000) }
-      );
+      const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice`, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
       const d = await r.json();
       for (const q of (d?.quoteResponse?.result || [])) {
         if (q.regularMarketPrice > 0) prices[q.symbol] = q.regularMarketPrice;
@@ -723,109 +836,82 @@ async function fetchLivePrices() {
     } catch {}
   }
 
-  // ── CRYPTO via CoinGecko (free, no key needed) ────────────────────────────
-  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
-  const coinGeckoMap = {
-    "BTCUSD":   "bitcoin",
-    "ETHUSD":   "ethereum",
-    "SOLUSD":   "solana",
-    "BNBUSD":   "binancecoin",
-    "XRPUSD":   "ripple",
-    "ADAUSD":   "cardano",
-    "AVAXUSD":  "avalanche-2",
-    "LINKUSD":  "chainlink",
-    "DOGEUSD":  "dogecoin",
-    "SHIBAUSD": "shiba-inu",
-    "PEPEUSD":  "pepe",
-    "SUIUSD":   "sui",
-  };
+  // ── CRYPTO via CoinGecko ──────────────────────────────────────────────────
   try {
-    const ids = cryptoAssets.map(a => coinGeckoMap[a.id]).filter(Boolean).join(",");
-    const r = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
-      { signal: AbortSignal.timeout(8000) }
-    );
+    const ids = Object.values(COINGECKO_MAP).join(",");
+    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, { signal: AbortSignal.timeout(8000) });
     const d = await r.json();
-    for (const asset of cryptoAssets) {
-      const geckoId = coinGeckoMap[asset.id];
-      if (geckoId && d[geckoId]?.usd) prices[asset.id] = d[geckoId].usd;
+    for (const [assetId, geckoId] of Object.entries(COINGECKO_MAP)) {
+      if (d[geckoId]?.usd) prices[assetId] = d[geckoId].usd;
     }
   } catch {}
 
-  // ── FOREX via exchangerate-api.com (free, no key, reliable) ─────────────
-  // Fetches all rates relative to USD in one call, then derives cross pairs
-  const forexAssets = UNIVERSE.filter(a => a.type === "forex");
-  try {
-    const r = await fetch(
-      'https://open.er-api.com/v6/latest/USD',
-      { signal: AbortSignal.timeout(8000) }
-    );
-    const d = await r.json();
-    if (d.result === 'success' && d.rates) {
-      const rates = d.rates; // All rates relative to USD
-
-      // rates[X] = how many X per 1 USD (e.g. rates.AUD = 1.42 means 1 USD = 1.42 AUD)
-      // To get price of base/quote (e.g. AUD/USD = how many USD per 1 AUD):
-      const getRate = (base, quote) => {
-        if (base === 'USD') return rates[quote] ? rates[quote] : null;       // USD/JPY = rates.JPY
-        if (quote === 'USD') return rates[base] ? 1 / rates[base] : null;   // AUD/USD = 1/rates.AUD
-        // Cross rate e.g. GBP/JPY = (1/rates.GBP) * rates.JPY
-        if (rates[base] && rates[quote]) return rates[quote] / rates[base];
-        return null;
-      };
-
-      // Map our asset IDs to base/quote currencies
-      const pairMap = {
-        "EURUSD": ["EUR","USD"], "GBPUSD": ["GBP","USD"], "USDJPY": ["USD","JPY"],
-        "AUDUSD": ["AUD","USD"], "USDCAD": ["USD","CAD"], "USDCHF": ["USD","CHF"],
-        "NZDUSD": ["NZD","USD"], "GBPJPY": ["GBP","JPY"], "EURGBP": ["EUR","GBP"],
-        "EURJPY": ["EUR","JPY"], "CADJPY": ["CAD","JPY"], "USDTRY": ["USD","TRY"],
-        "USDZAR": ["USD","ZAR"], "USDMXN": ["USD","MXN"],
-      };
-
-      for (const asset of forexAssets) {
-        const pair = pairMap[asset.id];
-        if (!pair) continue;
-        const rate = getRate(pair[0], pair[1]);
-        if (rate && rate > 0) prices[asset.id] = parseFloat(rate.toFixed(6));
-      }
-    }
-  } catch {}
-
-  // ── OPTIONS: prices come from underlying stocks (already fetched above) ───
-  // No separate fetch needed — priceOptionSignal uses livePrices[underlying]
+  // ── FOREX via Twelve Data (spot price from latest candle close) ───────────
+  // Will be populated from real candle data in main handler
 
   return prices;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN HANDLER
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function handler(req) {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
   }
 
-  // Fetch live prices — fall back to hardcoded base if unavailable
-  const livePrices = await fetchLivePrices();
+  const finnhubKey = process.env.FINNHUB_API_KEY;
+  const twelveKey  = process.env.TWELVE_DATA_API_KEY;
+
+  // ── Fetch everything in parallel ─────────────────────────────────────────
+  const [livePrices, forexBars] = await Promise.all([
+    fetchLivePrices(),
+    fetchAllForexBars(twelveKey),
+  ]);
+
+  // Extract forex spot prices from the latest candle close
+  for (const [assetId, bars] of Object.entries(forexBars)) {
+    if (bars.daily.length > 0) {
+      livePrices[assetId] = bars.daily[bars.daily.length - 1].c;
+    }
+  }
+
+  // ── Pre-fetch all real bars in parallel ─────────────────────────────────
+  const realBarsCache = {};
+
+  // Stocks: fetch all in parallel
+  const stockAssets = UNIVERSE.filter(a => a.type === "stock");
+  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
+
+  await Promise.all([
+    ...stockAssets.map(async a => {
+      const bars = await fetchStockBars(a.id, finnhubKey);
+      if (bars) realBarsCache[a.id] = bars;
+    }),
+    ...cryptoAssets.map(async a => {
+      const bars = await fetchCryptoBars(a.id);
+      if (bars) realBarsCache[a.id] = bars;
+    }),
+  ]);
+  // Forex bars already fetched above
+  for (const [assetId, bars] of Object.entries(forexBars)) {
+    realBarsCache[assetId] = bars;
+  }
 
   const signals = [];
-  const seen    = new Set(); // key: assetId-direction-timeframe (one signal per combo)
+  const seen    = new Set();
 
   for (const asset of UNIVERSE) {
-    // ── OPTIONS: price using Black-Scholes instead of bar analysis ────────
+    // ── OPTIONS: Black-Scholes pricing ────────────────────────────────────
     if (asset.type === "option") {
-      // Find live price of underlying stock
       const underlyingPrice = livePrices[asset.underlying] || asset.base;
-
       for (const dir of ["L", "S"]) {
         const key = `${asset.id}-${dir}-Daily`;
         if (seen.has(key)) continue;
-
         const priced = priceOptionSignal(asset, underlyingPrice, dir);
         if (!priced) continue;
-
-        // Only surface calls (L) unless underlying is in downtrend
         if (dir === "S" && underlyingPrice >= asset.base * 0.95) continue;
-
         seen.add(key);
         signals.push({
           id:           `${asset.id}-${dir}-Daily-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
@@ -855,30 +941,30 @@ export async function handler(req) {
           assetType:    "option",
         });
       }
-      continue; // skip bar analysis for options
+      continue;
     }
 
-    // ── STANDARD ASSETS: bar-based signal analysis ────────────────────────
+    // ── REAL BAR ANALYSIS ─────────────────────────────────────────────────
+    let dBars = null, hBars = null;
+    const cached = realBarsCache[asset.id];
+    if (cached) { dBars = cached.daily; hBars = cached.h4; }
+
+    // Skip asset entirely if no real bars available
     const livePrice = livePrices[asset.id] || null;
-    const base      = livePrice || asset.base;
-    const dBars     = makeBars(base, asset.vol, 30);
-    const hBars     = makeBars(base, asset.vol * 0.45, 30);
+    if (!dBars || dBars.length < 10) continue;
+    if (!hBars || hBars.length < 10) hBars = dBars; // use daily as fallback for 4H only
 
     for (const sig of combineSignals(asset, dBars, hBars, livePrice)) {
       const key = `${asset.id}-${sig.direction}-${sig.timeframe}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      signals.push(sig);
+      signals.push({ ...sig, assetType: asset.type });
     }
   }
 
   // Sort: multi-theory signals first, then by score
   signals.sort((a, b) => b.theoryCount - a.theoryCount || b.edgeScore - a.edgeScore);
 
-  // Risk level filtering
-  // risk=1 (Grandma Approved)  — 3 theories, fallback to 2 if none
-  // risk=2 (Divorce Territory) — 2+ theories
-  // risk=3 (YOLO)              — 1+ theory (everything)
   const url  = new URL(req.url, "http://localhost");
   const risk = parseInt(url.searchParams.get("risk") || "2");
 
@@ -887,9 +973,18 @@ export async function handler(req) {
   if (risk === 3) {
     const seenSingle = new Set();
     for (const asset of UNIVERSE) {
-      if (asset.type === "option") continue; // options handled separately with BS pricing
+      if (asset.type === "option") continue;
       const liveBase = livePrices[asset.id] || asset.base;
-      for (const [bars, tf] of [[makeBars(liveBase, asset.vol, 30), "Daily"], [makeBars(liveBase, asset.vol * 0.45, 30), "4H"]]) {
+
+      // Use cached real bars, fall back to synthetic
+      const cachedYolo = realBarsCache[asset.id];
+      let dB = cachedYolo ? cachedYolo.daily : null;
+      let hB = cachedYolo ? cachedYolo.h4    : null;
+      // Skip asset if no real bars
+      if (!dB || dB.length < 10) continue;
+      if (!hB || hB.length < 10) hB = dB; // use daily as fallback for 4H only
+
+      for (const [bars, tf] of [[dB, "Daily"], [hB, "4H"]]) {
         const all = [
           ...wyckoffAnalysis(bars),
           ...elliottWaveAnalysis(bars),
@@ -899,18 +994,16 @@ export async function handler(req) {
           const key = `${asset.id}-${r.direction}-${tf}-${r.setup}`;
           if (seenSingle.has(key)) continue;
           seenSingle.add(key);
-          // Skip if already covered by a multi-theory signal
           if (seen.has(`${asset.id}-${r.direction}-${tf}`)) continue;
-          const entry  = liveBase || bars[bars.length - 1].c;
-          const atr    = calcATR(bars) || entry * 0.02;
-          const mult   = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
+          const entry   = liveBase || bars[bars.length - 1].c;
+          const atr     = calcATR(bars) || entry * 0.02;
+          const mult    = asset.type === "forex" ? 3 : asset.type === "crypto" ? 5 : 4;
           const maxMove = entry * (asset.type === "forex" ? 0.03 : asset.type === "crypto" ? 0.15 : 0.25);
           const move    = Math.min(atr * mult, maxMove);
           const target  = r.direction === "L" ? entry + move : entry - move;
           const stop    = r.direction === "L" ? entry - move * 0.4 : entry + move * 0.4;
-          // Vary upside naturally from ATR, capped per asset type
-      const maxUpside = asset.type === "forex" ? 8 : asset.type === "crypto" ? 40 : 30;
-      const upside  = Math.min(maxUpside, Math.max(2, Math.abs(Math.round((target - entry) / entry * 100))));
+          const maxUpside = asset.type === "forex" ? 8 : asset.type === "crypto" ? 40 : 30;
+          const upside  = Math.min(maxUpside, Math.max(2, Math.abs(Math.round((target - entry) / entry * 100))));
           const rr      = parseFloat((Math.abs(target - entry) / Math.max(0.00001, Math.abs(entry - stop))).toFixed(1));
           singleTheorySignals.push({
             id: `${asset.id}-${r.direction}-${tf}-single-${Math.random().toString(36).slice(2,5)}`,
@@ -926,8 +1019,8 @@ export async function handler(req) {
             timeToTarget: asset.type === "forex" ? "4h–2d" : asset.type === "crypto" ? "1–3d" : "2–7d",
             catalysts: [`${r.setup}: ${r.detail}`],
             edgeScore: r.strength, theoryCount: 1, theories: [r.theory],
-            edges: [r.setup], timeframe: tf, sector: asset.sector, type: asset.type,
-            assetType: asset.type,
+            edges: [r.setup], timeframe: tf, sector: asset.sector,
+            type: asset.type, assetType: asset.type,
             timestamp: Date.now(),
           });
         }
@@ -938,13 +1031,10 @@ export async function handler(req) {
   let filtered;
   if (risk === 1) {
     filtered = signals.filter(s => s.theoryCount >= 3);
-    if (filtered.length === 0) {
-      filtered = signals.filter(s => s.theoryCount >= 2).slice(0, 5);
-    }
+    if (filtered.length === 0) filtered = signals.filter(s => s.theoryCount >= 2).slice(0, 5);
   } else if (risk === 2) {
     filtered = signals.filter(s => s.theoryCount >= 2);
   } else {
-    // YOLO — multi-theory first, then single-theory fill
     filtered = [...signals, ...singleTheorySignals];
   }
 
