@@ -7,9 +7,12 @@ import prices  from './api/prices.js';
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin',  '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -34,9 +37,8 @@ async function adapt(handler, req, res) {
 app.get('/api/screen4',  (req, res) => adapt(screen4, req, res));
 app.get('/api/news',     (req, res) => adapt(news,    req, res));
 app.get('/api/prices',   (req, res) => adapt(prices,  req, res));
-app.post('/api/analyse', (req, res) => adapt(analyse, req, res));
-
-app.get('/api/analyse',  (req, res) => adapt(analyse, req, res));
+app.post('/api/analyse', (req, res) => analyse(req, res));
+app.get('/api/analyse',  (req, res) => analyse(req, res));
 
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
 
