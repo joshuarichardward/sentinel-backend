@@ -688,104 +688,88 @@ function combineSignals(asset, dBars, hBars, livePrice = null) {
 // Fetch live prices from multiple sources
 async function fetchLivePrices() {
   const prices = {};
+  const finnhubKey  = process.env.FINNHUB_API_KEY;
+  const twelveKey   = process.env.TWELVE_DATA_API_KEY;
 
-  // ── CRYPTO + FOREX via Yahoo Finance ──────────────────────────────────────
-  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
-  const forexAssets  = UNIVERSE.filter(a => a.type === "forex");
-
-  // Explicit Yahoo ticker map for crypto (Yahoo uses short symbols like BTC-USD)
-  const cryptoYahooMap = {
-    "BTCUSD":   "BTC-USD",
-    "ETHUSD":   "ETH-USD",
-    "SOLUSD":   "SOL-USD",
-    "BNBUSD":   "BNB-USD",
-    "XRPUSD":   "XRP-USD",
-    "ADAUSD":   "ADA-USD",
-    "AVAXUSD":  "AVAX-USD",
-    "LINKUSD":  "LINK-USD",
-    "DOGEUSD":  "DOGE-USD",
-    "SHIBAUSD": "SHIB-USD",
-    "PEPEUSD":  "PEPE-USD",
-    "SUIUSD":   "SUI-USD",
-  };
-  // Reverse map: Yahoo symbol → our asset ID
-  const yahooToCryptoId = Object.fromEntries(Object.entries(cryptoYahooMap).map(([k,v]) => [v, k]));
-
-  // Explicit Yahoo forex map — Yahoo uses EURUSD=X for cross pairs, TRY=X for USD/XXX
-  const forexYahooMap = {
-    "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X",
-    "AUDUSD": "AUDUSD=X", "USDCAD": "CAD=X",    "USDCHF": "CHF=X",
-    "NZDUSD": "NZDUSD=X", "GBPJPY": "GBPJPY=X", "EURGBP": "EURGBP=X",
-    "EURJPY": "EURJPY=X", "CADJPY": "CADJPY=X", "USDTRY": "TRY=X",
-    "USDZAR": "ZAR=X",    "USDMXN": "MXN=X",
-  };
-  const yahooToForexId = Object.fromEntries(Object.entries(forexYahooMap).map(([k,v]) => [v, k]));
-
-  const cryptoYahoo = cryptoAssets.map(a => cryptoYahooMap[a.id] || `${a.id.slice(0,-3)}-USD`);
-  const forexYahoo  = forexAssets.map(a => forexYahooMap[a.id]).filter(Boolean);
-  const cfSymbols   = [...cryptoYahoo, ...forexYahoo].join(",");
-
-  try {
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${cfSymbols}&fields=regularMarketPrice`,
-      { headers: yahooHeaders, signal: AbortSignal.timeout(8000) }
-    );
-    const d = await r.json();
-    for (const q of (d?.quoteResponse?.result || [])) {
-      if (!q.regularMarketPrice || q.regularMarketPrice <= 0) continue;
-      const sym = q.symbol;
-      if (sym.endsWith("-USD")) {
-        const id = yahooToCryptoId[sym];
-        if (id) prices[id] = q.regularMarketPrice;
-      } else if (sym.endsWith("=X")) {
-        const id = yahooToForexId[sym];
-        if (id) prices[id] = q.regularMarketPrice;
-      }
-    }
-  } catch {}
-
-  // ── STOCKS via Yahoo Finance (real-time, no key needed) ──────────────────
-  const stockAssets  = UNIVERSE.filter(a => a.type === "stock");
-  const yahooHeaders = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Origin": "https://finance.yahoo.com",
-    "Referer": "https://finance.yahoo.com/",
-  };
-
-  try {
-    const symbols = stockAssets.map(a => a.id).join(",");
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,currency`,
-      { headers: yahooHeaders, signal: AbortSignal.timeout(8000) }
-    );
-    const d = await r.json();
-    for (const q of (d?.quoteResponse?.result || [])) {
-      if (q.regularMarketPrice && q.regularMarketPrice > 0) {
-        prices[q.symbol] = q.regularMarketPrice;
-      }
-    }
-  } catch {}
-
-  // Fallback: fetch individually if batch failed
-  const missingStocks = stockAssets.filter(a => !prices[a.id]);
-  if (missingStocks.length > 0) {
-    await Promise.all(missingStocks.map(async (a) => {
+  // ── STOCKS via Finnhub ────────────────────────────────────────────────────
+  const stockAssets = UNIVERSE.filter(a => a.type === "stock");
+  if (finnhubKey) {
+    await Promise.all(stockAssets.map(async (a) => {
       try {
         const r = await fetch(
-          `https://query2.finance.yahoo.com/v8/finance/chart/${a.id}?interval=1d&range=1d`,
-          { headers: yahooHeaders, signal: AbortSignal.timeout(5000) }
+          `https://finnhub.io/api/v1/quote?symbol=${a.id}&token=${finnhubKey}`,
+          { signal: AbortSignal.timeout(6000) }
         );
         const d = await r.json();
-        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (price && price > 0) prices[a.id] = price;
+        if (d.c && d.c > 0) prices[a.id] = d.c;
       } catch {}
     }));
   }
 
+  // ── CRYPTO via CoinGecko (free, no key needed) ────────────────────────────
+  const cryptoAssets = UNIVERSE.filter(a => a.type === "crypto");
+  const coinGeckoMap = {
+    "BTCUSD":   "bitcoin",
+    "ETHUSD":   "ethereum",
+    "SOLUSD":   "solana",
+    "BNBUSD":   "binancecoin",
+    "XRPUSD":   "ripple",
+    "ADAUSD":   "cardano",
+    "AVAXUSD":  "avalanche-2",
+    "LINKUSD":  "chainlink",
+    "DOGEUSD":  "dogecoin",
+    "SHIBAUSD": "shiba-inu",
+    "PEPEUSD":  "pepe",
+    "SUIUSD":   "sui",
+  };
+  try {
+    const ids = cryptoAssets.map(a => coinGeckoMap[a.id]).filter(Boolean).join(",");
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    for (const asset of cryptoAssets) {
+      const geckoId = coinGeckoMap[asset.id];
+      if (geckoId && d[geckoId]?.usd) prices[asset.id] = d[geckoId].usd;
+    }
+  } catch {}
+
+  // ── FOREX via Twelve Data ─────────────────────────────────────────────────
+  const forexAssets = UNIVERSE.filter(a => a.type === "forex");
+  if (twelveKey) {
+    // Twelve Data uses FROM/TO format e.g. EUR/USD
+    const twelveForexMap = {
+      "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
+      "AUDUSD": "AUD/USD", "USDCAD": "USD/CAD", "USDCHF": "USD/CHF",
+      "NZDUSD": "NZD/USD", "GBPJPY": "GBP/JPY", "EURGBP": "EUR/GBP",
+      "EURJPY": "EUR/JPY", "CADJPY": "CAD/JPY", "USDTRY": "USD/TRY",
+      "USDZAR": "USD/ZAR", "USDMXN": "USD/MXN",
+    };
+    const symbols = forexAssets.map(a => twelveForexMap[a.id]).filter(Boolean).join(",");
+    try {
+      const r = await fetch(
+        `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbols)}&apikey=${twelveKey}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      const d = await r.json();
+      for (const asset of forexAssets) {
+        const sym = twelveForexMap[asset.id];
+        if (!sym) continue;
+        // Twelve Data returns single object if one symbol, array-like object if multiple
+        const entry = d[sym] || d;
+        const price = parseFloat(entry?.price);
+        if (price && price > 0) prices[asset.id] = price;
+      }
+    } catch {}
+  }
+
+  // ── OPTIONS: prices come from underlying stocks (already fetched above) ───
+  // No separate fetch needed — priceOptionSignal uses livePrices[underlying]
+
   return prices;
 }
+
 
 export async function handler(req) {
   if (req.method === "OPTIONS") {
