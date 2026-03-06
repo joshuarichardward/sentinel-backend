@@ -12,142 +12,75 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const UNIVERSE = [
-  // CRYPTO — prices as of Mar 2026
-  { id:"BTCUSD",  name:"Bitcoin",         sector:"Crypto Major",  type:"crypto", vol:0.04,   base:87000   },
-  { id:"ETHUSD",  name:"Ethereum",        sector:"Crypto Major",  type:"crypto", vol:0.05,   base:2100    },
-  { id:"SOLUSD",  name:"Solana",          sector:"Crypto Major",  type:"crypto", vol:0.06,   base:138     },
-  { id:"BNBUSD",  name:"BNB",             sector:"Crypto Major",  type:"crypto", vol:0.035,  base:605     },
-  { id:"XRPUSD",  name:"XRP",             sector:"Crypto Major",  type:"crypto", vol:0.07,   base:2.45    },
-  { id:"ADAUSD",  name:"Cardano",         sector:"Crypto Mid",    type:"crypto", vol:0.07,   base:0.82    },
-  { id:"AVAXUSD", name:"Avalanche",       sector:"Crypto Mid",    type:"crypto", vol:0.07,   base:21      },
-  { id:"LINKUSD", name:"Chainlink",       sector:"Crypto Mid",    type:"crypto", vol:0.065,  base:13.5    },
-  { id:"DOGEUSD", name:"Dogecoin",        sector:"Meme Coin",     type:"crypto", vol:0.08,   base:0.185   },
-  { id:"SHIBAUSD",name:"Shiba Inu",       sector:"Meme Coin",     type:"crypto", vol:0.10,   base:0.0000138 },
-  { id:"PEPEUSD", name:"PEPE",            sector:"Meme Coin",     type:"crypto", vol:0.12,   base:0.0000105 },
-  { id:"SUIUSD",  name:"SUI",             sector:"Crypto Mid",    type:"crypto", vol:0.08,   base:2.85    },
-  // FOREX — prices as of Mar 2026
-  { id:"EURUSD",  name:"EUR/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:1.0820  },
-  { id:"GBPUSD",  name:"GBP/USD",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:1.2940  },
-  { id:"USDJPY",  name:"USD/JPY",         sector:"Forex Major",   type:"forex",  vol:0.007,  base:148.50  },
-  { id:"AUDUSD",  name:"AUD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.6290  },
-  { id:"USDCAD",  name:"USD/CAD",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:1.4420  },
-  { id:"USDCHF",  name:"USD/CHF",         sector:"Forex Major",   type:"forex",  vol:0.005,  base:0.8960  },
-  { id:"NZDUSD",  name:"NZD/USD",         sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.5700  },
-  { id:"GBPJPY",  name:"GBP/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.009,  base:192.10  },
-  { id:"EURGBP",  name:"EUR/GBP",         sector:"Forex Minor",   type:"forex",  vol:0.005,  base:0.8360  },
-  { id:"EURJPY",  name:"EUR/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.008,  base:160.50  },
-  { id:"CADJPY",  name:"CAD/JPY",         sector:"Forex Minor",   type:"forex",  vol:0.007,  base:102.90  },
-  { id:"USDTRY",  name:"USD/TRY",         sector:"Forex Exotic",  type:"forex",  vol:0.015,  base:44.00   },
-  { id:"USDZAR",  name:"USD/ZAR",         sector:"Forex Exotic",  type:"forex",  vol:0.012,  base:18.50   },
-  { id:"USDMXN",  name:"USD/MXN",         sector:"Forex Exotic",  type:"forex",  vol:0.010,  base:20.40   },
-  // STOCKS — prices as of Mar 2026
-  { id:"IONQ",    name:"IonQ",            sector:"Quantum",       type:"stock",  vol:0.07,   base:28.50   },
-  { id:"RGTI",    name:"Rigetti",         sector:"Quantum",       type:"stock",  vol:0.08,   base:9.80    },
-  { id:"QUBT",    name:"Quantum Computing",sector:"Quantum",      type:"stock",  vol:0.09,   base:6.20    },
-  { id:"QBTS",    name:"D-Wave",          sector:"Quantum",       type:"stock",  vol:0.08,   base:8.40    },
-  { id:"RKLB",    name:"Rocket Lab",      sector:"Space",         type:"stock",  vol:0.06,   base:22.10   },
-  { id:"LUNR",    name:"Intuitive Machines",sector:"Space",       type:"stock",  vol:0.08,   base:7.20    },
-  { id:"ASTS",    name:"AST SpaceMobile", sector:"Space",         type:"stock",  vol:0.07,   base:18.60   },
-  { id:"ACHR",    name:"Archer Aviation", sector:"eVTOL",         type:"stock",  vol:0.07,   base:7.40    },
-  { id:"MARA",    name:"Marathon Digital",sector:"BTC Miner",     type:"stock",  vol:0.08,   base:14.80   },
-  { id:"RIOT",    name:"Riot Platforms",  sector:"BTC Miner",     type:"stock",  vol:0.07,   base:8.50    },
-  { id:"MSTR",    name:"MicroStrategy",   sector:"BTC Treasury",  type:"stock",  vol:0.06,   base:295     },
-  { id:"COIN",    name:"Coinbase",        sector:"Crypto Exch",   type:"stock",  vol:0.05,   base:205     },
-  { id:"SOUN",    name:"SoundHound AI",   sector:"AI",            type:"stock",  vol:0.09,   base:7.90    },
-  { id:"BBAI",    name:"BigBear.ai",      sector:"AI",            type:"stock",  vol:0.08,   base:1.65    },
-  { id:"UPST",    name:"Upstart",         sector:"AI/Fintech",    type:"stock",  vol:0.07,   base:52      },
-  { id:"SMCI",    name:"Super Micro",     sector:"AI Server",     type:"stock",  vol:0.06,   base:38      },
-  { id:"NVDA",    name:"Nvidia",          sector:"AI/Semis",      type:"stock",  vol:0.04,   base:118     },
-  { id:"AMD",     name:"AMD",             sector:"AI/Semis",      type:"stock",  vol:0.04,   base:102     },
-  { id:"PLTR",    name:"Palantir",        sector:"AI/Defense",    type:"stock",  vol:0.05,   base:82      },
-  { id:"SAVA",    name:"Cassava Sciences",sector:"Biotech",       type:"stock",  vol:0.09,   base:3.80    },
-  { id:"PLUG",    name:"Plug Power",      sector:"Hydrogen",      type:"stock",  vol:0.06,   base:1.95    },
-  { id:"SOFI",    name:"SoFi",            sector:"Fintech",       type:"stock",  vol:0.06,   base:11.20   },
-  { id:"NIO",     name:"NIO",             sector:"EM/EV",         type:"stock",  vol:0.07,   base:3.90    },
-  { id:"AFRM",    name:"Affirm",          sector:"Fintech",       type:"stock",  vol:0.07,   base:44      },
-  { id:"TSLA",    name:"Tesla",           sector:"EV",            type:"stock",  vol:0.05,   base:285     },
-  { id:"HOOD",    name:"Robinhood",       sector:"Fintech",       type:"stock",  vol:0.06,   base:38      },
-  // OPTIONS — Black-Scholes priced calls on high-vol underlyings
-  // Strikes set ~3-5% OTM from current live base prices
-  { id:"NVDA_C",  name:"NVDA Calls",      sector:"Options",       type:"option", vol:0.65,   base:183,    strike:192,  expDays:7,   underlying:"NVDA" },
-  { id:"TSLA_C",  name:"TSLA Calls",      sector:"Options",       type:"option", vol:0.72,   base:405,    strike:425,  expDays:5,   underlying:"TSLA" },
-  { id:"PLTR_C",  name:"PLTR Calls",      sector:"Options",       type:"option", vol:0.68,   base:152,    strike:160,  expDays:7,   underlying:"PLTR" },
-  { id:"MSTR_C",  name:"MSTR Calls",      sector:"Options",       type:"option", vol:0.90,   base:139,    strike:146,  expDays:3,   underlying:"MSTR" },
-  { id:"COIN_C",  name:"COIN Calls",      sector:"Options",       type:"option", vol:0.75,   base:205,    strike:215,  expDays:7,   underlying:"COIN" },
+  // ── CRYPTO ────────────────────────────────────────────────────────────────
+  { id:"BTCUSD",  name:"Bitcoin",           sector:"Crypto Major",  type:"crypto", vol:0.04,   base:87000   },
+  { id:"ETHUSD",  name:"Ethereum",          sector:"Crypto Major",  type:"crypto", vol:0.05,   base:2100    },
+  { id:"SOLUSD",  name:"Solana",            sector:"Crypto Major",  type:"crypto", vol:0.06,   base:138     },
+  { id:"BNBUSD",  name:"BNB",               sector:"Crypto Major",  type:"crypto", vol:0.035,  base:605     },
+  { id:"XRPUSD",  name:"XRP",               sector:"Crypto Major",  type:"crypto", vol:0.07,   base:2.45    },
+  { id:"ADAUSD",  name:"Cardano",           sector:"Crypto Mid",    type:"crypto", vol:0.07,   base:0.82    },
+  { id:"AVAXUSD", name:"Avalanche",         sector:"Crypto Mid",    type:"crypto", vol:0.07,   base:21      },
+  { id:"LINKUSD", name:"Chainlink",         sector:"Crypto Mid",    type:"crypto", vol:0.065,  base:13.5    },
+  { id:"DOGEUSD", name:"Dogecoin",          sector:"Meme Coin",     type:"crypto", vol:0.08,   base:0.185   },
+  { id:"SHIBAUSD",name:"Shiba Inu",         sector:"Meme Coin",     type:"crypto", vol:0.10,   base:0.0000138 },
+  { id:"PEPEUSD", name:"PEPE",              sector:"Meme Coin",     type:"crypto", vol:0.12,   base:0.0000105 },
+  { id:"SUIUSD",  name:"SUI",               sector:"Crypto Mid",    type:"crypto", vol:0.08,   base:2.85    },
+
+  // ── FOREX ─────────────────────────────────────────────────────────────────
+  { id:"EURUSD",  name:"EUR/USD",           sector:"Forex Major",   type:"forex",  vol:0.006,  base:1.0820  },
+  { id:"GBPUSD",  name:"GBP/USD",           sector:"Forex Major",   type:"forex",  vol:0.007,  base:1.2940  },
+  { id:"USDJPY",  name:"USD/JPY",           sector:"Forex Major",   type:"forex",  vol:0.007,  base:148.50  },
+  { id:"AUDUSD",  name:"AUD/USD",           sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.6290  },
+  { id:"USDCAD",  name:"USD/CAD",           sector:"Forex Major",   type:"forex",  vol:0.005,  base:1.4420  },
+  { id:"USDCHF",  name:"USD/CHF",           sector:"Forex Major",   type:"forex",  vol:0.005,  base:0.8960  },
+  { id:"NZDUSD",  name:"NZD/USD",           sector:"Forex Major",   type:"forex",  vol:0.006,  base:0.5700  },
+  { id:"GBPJPY",  name:"GBP/JPY",           sector:"Forex Minor",   type:"forex",  vol:0.009,  base:192.10  },
+  { id:"EURGBP",  name:"EUR/GBP",           sector:"Forex Minor",   type:"forex",  vol:0.005,  base:0.8360  },
+  { id:"EURJPY",  name:"EUR/JPY",           sector:"Forex Minor",   type:"forex",  vol:0.008,  base:160.50  },
+  { id:"CADJPY",  name:"CAD/JPY",           sector:"Forex Minor",   type:"forex",  vol:0.007,  base:102.90  },
+  { id:"USDTRY",  name:"USD/TRY",           sector:"Forex Exotic",  type:"forex",  vol:0.015,  base:44.00   },
+  { id:"USDZAR",  name:"USD/ZAR",           sector:"Forex Exotic",  type:"forex",  vol:0.012,  base:18.50   },
+  { id:"USDMXN",  name:"USD/MXN",           sector:"Forex Exotic",  type:"forex",  vol:0.010,  base:20.40   },
+
+  // ── MEGA CAP / INDEX ──────────────────────────────────────────────────────
+  { id:"SPY",     name:"S&P 500 ETF",       sector:"Index",         type:"stock",  vol:0.012,  base:565     },
+  { id:"QQQ",     name:"Nasdaq ETF",        sector:"Index",         type:"stock",  vol:0.015,  base:475     },
+  { id:"AAPL",    name:"Apple",             sector:"Mega Cap",      type:"stock",  vol:0.02,   base:220     },
+  { id:"MSFT",    name:"Microsoft",         sector:"Mega Cap",      type:"stock",  vol:0.02,   base:415     },
+  { id:"AMZN",    name:"Amazon",            sector:"Mega Cap",      type:"stock",  vol:0.025,  base:210     },
+  { id:"META",    name:"Meta",              sector:"Mega Cap",      type:"stock",  vol:0.025,  base:620     },
+  { id:"GOOGL",   name:"Alphabet",          sector:"Mega Cap",      type:"stock",  vol:0.02,   base:178     },
+
+  // ── HIGH VOLUME DAY TRADE STOCKS ──────────────────────────────────────────
+  { id:"NVDA",    name:"Nvidia",            sector:"AI/Semis",      type:"stock",  vol:0.04,   base:118     },
+  { id:"AMD",     name:"AMD",               sector:"AI/Semis",      type:"stock",  vol:0.04,   base:102     },
+  { id:"TSLA",    name:"Tesla",             sector:"EV",            type:"stock",  vol:0.05,   base:285     },
+  { id:"PLTR",    name:"Palantir",          sector:"AI/Defense",    type:"stock",  vol:0.05,   base:82      },
+  { id:"COIN",    name:"Coinbase",          sector:"Crypto Exch",   type:"stock",  vol:0.05,   base:205     },
+  { id:"MSTR",    name:"MicroStrategy",     sector:"BTC Treasury",  type:"stock",  vol:0.06,   base:295     },
+  { id:"MARA",    name:"Marathon Digital",  sector:"BTC Miner",     type:"stock",  vol:0.08,   base:14.80   },
+  { id:"RIOT",    name:"Riot Platforms",    sector:"BTC Miner",     type:"stock",  vol:0.07,   base:8.50    },
+  { id:"HOOD",    name:"Robinhood",         sector:"Fintech",       type:"stock",  vol:0.06,   base:38      },
+  { id:"SOFI",    name:"SoFi",              sector:"Fintech",       type:"stock",  vol:0.06,   base:11.20   },
+  { id:"AFRM",    name:"Affirm",            sector:"Fintech",       type:"stock",  vol:0.07,   base:44      },
+  { id:"UPST",    name:"Upstart",           sector:"AI/Fintech",    type:"stock",  vol:0.07,   base:52      },
+
+  // ── SPECULATIVE / HIGH BETA ───────────────────────────────────────────────
+  { id:"IONQ",    name:"IonQ",              sector:"Quantum",       type:"stock",  vol:0.07,   base:28.50   },
+  { id:"RGTI",    name:"Rigetti",           sector:"Quantum",       type:"stock",  vol:0.08,   base:9.80    },
+  { id:"QBTS",    name:"D-Wave",            sector:"Quantum",       type:"stock",  vol:0.08,   base:18.80   },
+  { id:"QUBT",    name:"Quantum Computing", sector:"Quantum",       type:"stock",  vol:0.09,   base:6.20    },
+  { id:"RKLB",    name:"Rocket Lab",        sector:"Space",         type:"stock",  vol:0.06,   base:22.10   },
+  { id:"ASTS",    name:"AST SpaceMobile",   sector:"Space",         type:"stock",  vol:0.07,   base:18.60   },
+  { id:"LUNR",    name:"Intuitive Machines",sector:"Space",         type:"stock",  vol:0.08,   base:7.20    },
+  { id:"ACHR",    name:"Archer Aviation",   sector:"eVTOL",         type:"stock",  vol:0.07,   base:7.40    },
+  { id:"SOUN",    name:"SoundHound AI",     sector:"AI",            type:"stock",  vol:0.09,   base:7.90    },
+  { id:"BBAI",    name:"BigBear.ai",        sector:"AI",            type:"stock",  vol:0.08,   base:1.65    },
+  { id:"SMCI",    name:"Super Micro",       sector:"AI Server",     type:"stock",  vol:0.06,   base:38      },
+  { id:"NIO",     name:"NIO",               sector:"EM/EV",         type:"stock",  vol:0.07,   base:3.90    },
+  { id:"PLUG",    name:"Plug Power",        sector:"Hydrogen",      type:"stock",  vol:0.06,   base:1.95    },
+  { id:"SAVA",    name:"Cassava Sciences",  sector:"Biotech",       type:"stock",  vol:0.09,   base:3.80    },
 ];
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLACK-SCHOLES OPTIONS PRICING
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Cumulative normal distribution (Hart approximation)
-function normCDF(x) {
-  const a1 =  0.254829592, a2 = -0.284496736, a3 =  1.421413741;
-  const a4 = -1.453152027, a5 =  1.061405429, p  =  0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  x = Math.abs(x) / Math.sqrt(2);
-  const t = 1.0 / (1.0 + p * x);
-  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return 0.5 * (1.0 + sign * y);
-}
-
-// Black-Scholes call price
-// S = spot, K = strike, T = time to expiry (years), r = risk-free rate, sigma = IV
-function blackScholesCall(S, K, T, r, sigma) {
-  if (T <= 0) return Math.max(0, S - K);
-  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
-  return S * normCDF(d1) - K * Math.exp(-r * T) * normCDF(d2);
-}
-
-// Black-Scholes put price
-function blackScholesPut(S, K, T, r, sigma) {
-  if (T <= 0) return Math.max(0, K - S);
-  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
-  return K * Math.exp(-r * T) * normCDF(-d2) - S * normCDF(-d1);
-}
-
-// Price an option signal using Black-Scholes
-// Returns { entry, target, stop, upside, rr }
-function priceOptionSignal(asset, liveSpot, direction) {
-  const S      = liveSpot || asset.base;
-  // Auto-set strike to 4% OTM from live spot so it's always realistic
-  const K      = S * (direction === "L" ? 1.04 : 0.96);
-  const T      = asset.expDays / 365;
-  const r      = 0.053;          // ~5.3% risk-free rate (current Fed funds)
-  const sigma  = asset.vol;      // IV stored on asset
-  const isCall = direction === "L"; // Long signal = buy calls, Short = buy puts
-
-  const entryPrice = isCall
-    ? blackScholesCall(S, K, T, r, sigma)
-    : blackScholesPut(S, K, T, r, sigma);
-
-  if (entryPrice < 0.01) return null; // Too far OTM — skip
-
-  // Target: spot moves 8% favourably → recalculate BS price
-  const spotsUp   = isCall ? S * 1.08 : S * 0.92;
-  const targetPrice = isCall
-    ? blackScholesCall(spotsUp, K, T * 0.5, r, sigma * 1.1)  // IV crush on move
-    : blackScholesPut(spotsUp, K, T * 0.5, r, sigma * 1.1);
-
-  // Stop: spot moves 4% against → 50% of premium lost (standard options stop)
-  const stopPrice = entryPrice * 0.5;
-
-  const upsidePct = Math.round((targetPrice - entryPrice) / entryPrice * 100);
-  const rrRatio   = parseFloat(((targetPrice - entryPrice) / (entryPrice - stopPrice)).toFixed(1));
-
-  return {
-    entry:      parseFloat(entryPrice.toFixed(3)),
-    target:     parseFloat(targetPrice.toFixed(3)),
-    stop:       parseFloat(stopPrice.toFixed(3)),
-    upside:     Math.max(10, Math.min(500, upsidePct)),
-    riskReward: Math.max(0.5, rrRatio),
-    iv:         Math.round(sigma * 100),
-    strike:     parseFloat(K.toFixed(2)),
-  };
-}
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -903,47 +836,6 @@ export async function handler(req) {
   const seen    = new Set();
 
   for (const asset of UNIVERSE) {
-    // ── OPTIONS: Black-Scholes pricing ────────────────────────────────────
-    if (asset.type === "option") {
-      const underlyingPrice = livePrices[asset.underlying] || asset.base;
-      for (const dir of ["L", "S"]) {
-        const key = `${asset.id}-${dir}-Daily`;
-        if (seen.has(key)) continue;
-        const priced = priceOptionSignal(asset, underlyingPrice, dir);
-        if (!priced) continue;
-        if (dir === "S" && underlyingPrice >= asset.base * 0.95) continue;
-        seen.add(key);
-        signals.push({
-          id:           `${asset.id}-${dir}-Daily-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
-          tid:          asset.id,
-          name:         dir === "L" ? asset.name : asset.name.replace("Calls","Puts"),
-          instrument:   `${asset.sector} · OPTION · Daily`,
-          tier:         3,
-          direction:    dir,
-          entry:        priced.entry,
-          target:       priced.target,
-          stop:         priced.stop,
-          upside:       priced.upside,
-          riskReward:   priced.riskReward,
-          confidence:   Math.min(85, 55 + Math.round(priced.iv * 0.2)),
-          catalystScore: 8,
-          timeToTarget: `${asset.expDays}d expiry`,
-          catalysts:    [
-            `IV: ${priced.iv}%  ·  Strike: $${priced.strike}  ·  Underlying: $${underlyingPrice.toFixed(2)}`,
-            `Black-Scholes priced ${dir === "L" ? "call" : "put"} — ${asset.expDays}-day expiry`,
-          ],
-          timestamp:    Date.now(),
-          edgeScore:    75,
-          theoryCount:  2,
-          timeframe:    "Daily",
-          sector:       asset.sector,
-          type:         "option",
-          assetType:    "option",
-        });
-      }
-      continue;
-    }
-
     // ── REAL BAR ANALYSIS ─────────────────────────────────────────────────
     let dBars = null, hBars = null;
     const cached = realBarsCache[asset.id];
@@ -973,7 +865,6 @@ export async function handler(req) {
   if (risk === 3) {
     const seenSingle = new Set();
     for (const asset of UNIVERSE) {
-      if (asset.type === "option") continue;
       const liveBase = livePrices[asset.id] || asset.base;
 
       // Use cached real bars, fall back to synthetic
