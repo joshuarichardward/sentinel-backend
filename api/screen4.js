@@ -693,8 +693,6 @@ async function fetchLivePrices() {
 
   // ── STOCKS via Finnhub (with Polygon fallback) ───────────────────────────
   const stockAssets = UNIVERSE.filter(a => a.type === "stock");
-  const polygonKey  = process.env.POLYGON_API_KEY;
-
   if (finnhubKey) {
     await Promise.all(stockAssets.map(async (a) => {
       try {
@@ -708,23 +706,7 @@ async function fetchLivePrices() {
     }));
   }
 
-  // Fallback: use Polygon for any stocks that Finnhub missed
-  const missingStocks = stockAssets.filter(a => !prices[a.id]);
-  if (missingStocks.length > 0 && polygonKey) {
-    await Promise.all(missingStocks.map(async (a) => {
-      try {
-        const r = await fetch(
-          `https://api.polygon.io/v2/last/trade/${a.id}?apiKey=${polygonKey}`,
-          { signal: AbortSignal.timeout(6000) }
-        );
-        const d = await r.json();
-        const price = d?.results?.p;
-        if (price && price > 0) prices[a.id] = price;
-      } catch {}
-    }));
-  }
-
-  // Fallback 2: Yahoo Finance for anything still missing
+  // Fallback: Yahoo Finance for any stocks Finnhub missed
   const stillMissing = stockAssets.filter(a => !prices[a.id]);
   if (stillMissing.length > 0) {
     try {
@@ -770,34 +752,29 @@ async function fetchLivePrices() {
     }
   } catch {}
 
-  // ── FOREX via Twelve Data ─────────────────────────────────────────────────
+  // ── FOREX via Yahoo Finance (reliable, no rate limit) ────────────────────
   const forexAssets = UNIVERSE.filter(a => a.type === "forex");
-  if (twelveKey) {
-    // Twelve Data uses FROM/TO format e.g. EUR/USD
-    const twelveForexMap = {
-      "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
-      "AUDUSD": "AUD/USD", "USDCAD": "USD/CAD", "USDCHF": "USD/CHF",
-      "NZDUSD": "NZD/USD", "GBPJPY": "GBP/JPY", "EURGBP": "EUR/GBP",
-      "EURJPY": "EUR/JPY", "CADJPY": "CAD/JPY", "USDTRY": "USD/TRY",
-      "USDZAR": "USD/ZAR", "USDMXN": "USD/MXN",
-    };
-    const symbols = forexAssets.map(a => twelveForexMap[a.id]).filter(Boolean).join(",");
-    try {
-      const r = await fetch(
-        `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbols)}&apikey=${twelveKey}`,
-        { signal: AbortSignal.timeout(8000) }
-      );
-      const d = await r.json();
-      for (const asset of forexAssets) {
-        const sym = twelveForexMap[asset.id];
-        if (!sym) continue;
-        // Twelve Data returns single object if one symbol, array-like object if multiple
-        const entry = d[sym] || d;
-        const price = parseFloat(entry?.price);
-        if (price && price > 0) prices[asset.id] = price;
-      }
-    } catch {}
-  }
+  const yahooForexMap = {
+    "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X",
+    "AUDUSD": "AUDUSD=X", "USDCAD": "CAD=X",    "USDCHF": "CHF=X",
+    "NZDUSD": "NZDUSD=X", "GBPJPY": "GBPJPY=X", "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X", "CADJPY": "CADJPY=X", "USDTRY": "TRY=X",
+    "USDZAR": "ZAR=X",    "USDMXN": "MXN=X",
+  };
+  const yahooToForexId = Object.fromEntries(Object.entries(yahooForexMap).map(([k,v]) => [v,k]));
+  try {
+    const forexSyms = forexAssets.map(a => yahooForexMap[a.id]).filter(Boolean).join(",");
+    const yhHeaders = { "User-Agent": "Mozilla/5.0", "Accept": "application/json" };
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${forexSyms}&fields=regularMarketPrice`,
+      { headers: yhHeaders, signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    for (const q of (d?.quoteResponse?.result || [])) {
+      const id = yahooToForexId[q.symbol];
+      if (id && q.regularMarketPrice > 0) prices[id] = q.regularMarketPrice;
+    }
+  } catch {}
 
   // ── OPTIONS: prices come from underlying stocks (already fetched above) ───
   // No separate fetch needed — priceOptionSignal uses livePrices[underlying]
