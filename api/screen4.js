@@ -834,6 +834,7 @@ export async function handler(req) {
             `IV: ${priced.iv}%  ·  Strike: $${priced.strike}  ·  Underlying: $${underlyingPrice.toFixed(2)}`,
             `Black-Scholes priced ${dir === "L" ? "call" : "put"} — ${asset.expDays}-day expiry`,
           ],
+          timestamp:    Date.now(),
           edgeScore:    75,
           theoryCount:  2,
           timeframe:    "Daily",
