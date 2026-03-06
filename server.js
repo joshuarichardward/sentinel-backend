@@ -37,6 +37,21 @@ async function adapt(handler, req, res) {
 app.get('/api/screen4',  (req, res) => adapt(screen4, req, res));
 app.get('/api/news',     (req, res) => adapt(news,    req, res));
 app.get('/api/prices',   (req, res) => adapt(prices,  req, res));
+app.get('/api/debug-prices', async (req, res) => {
+  const finnhubKey = process.env.FINNHUB_API_KEY;
+  const testSymbols = ['QBTS', 'NVDA', 'TSLA', 'RGTI', 'IONQ'];
+  const results = {};
+  await Promise.all(testSymbols.map(async (sym) => {
+    try {
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`);
+      const d = await r.json();
+      results[sym] = { price: d.c, raw: d };
+    } catch(e) {
+      results[sym] = { error: e.message };
+    }
+  }));
+  res.json(results);
+});
 app.post('/api/analyse', (req, res) => analyse(req, res));
 app.get('/api/analyse',  (req, res) => analyse(req, res));
 
