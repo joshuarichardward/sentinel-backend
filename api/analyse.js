@@ -1,44 +1,20 @@
-export const config = { runtime: 'edge' };
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-export default async function handler(req) {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
-  }
-
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' });
 
-  let body;
-  try {
-    body = await req.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body', detail: e.message }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
+  const body = req.body;
+  if (!body) return res.status(400).json({ error: 'Empty request body' });
 
   const { name, dir, entry, target, stop, rr, ttg, upside, conf, catalysts } = body;
 
-  const prompt = `Signal: ${dir} ${name} | Upside: +${upside}% | Entry: ${entry} Target: ${target} Stop: ${stop} | R/R: ${rr}x | TTG: ${ttg} | Conf: ${conf}% | Catalysts: ${(catalysts || []).join('; ')}`;
+  const prompt = `Signal: ${dir} ${name} | Upside: ${upside}% | Entry: ${entry} Target: ${target} Stop: ${stop} | R/R: ${rr}x | TTG: ${ttg} | Conf: ${conf}% | Catalysts: ${(catalysts || []).join('; ')}`;
 
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -49,48 +25,21 @@ export default async function handler(req) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: 'Aggressive market analyst hunting asymmetric upside trades. Blunt, specific, conviction-driven. Max 90 words. State: the single key level to watch, catalyst conviction score 1-10, the main thing that could kill the trade, and one sentence on why this could be special.',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        system: 'You are an aggressive market analyst hunting asymmetric trades. Be blunt, specific, and conviction-driven. Max 90 words. Cover: the single key price level to watch, a catalyst conviction score 1-10, the main risk that could kill the trade, and one sentence on why this setup could be special.',
         messages: [{ role: 'user', content: prompt }],
       }),
     });
 
-    const rawText = await r.text();
+    const data = await r.json();
 
-    // Try to parse — if it fails, return the raw response so we can debug
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      return new Response(JSON.stringify({ error: 'Anthropic returned non-JSON', raw: rawText.slice(0, 500) }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-
-    // Surface Anthropic errors clearly
-    if (data.error) {
-      return new Response(JSON.stringify({ error: 'Anthropic API error', detail: data.error }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
+    if (data.error) return res.status(502).json({ error: 'Anthropic API error', detail: data.error });
 
     const analysis = data.content?.map(c => c.text || '').join('') || 'No content returned.';
+    return res.status(200).json({ analysis });
 
-    return new Response(JSON.stringify({ analysis }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 's-maxage=300',
-      },
-    });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Fetch failed', detail: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
+    return res.status(500).json({ error: 'Fetch failed', detail: err.message });
   }
 }
