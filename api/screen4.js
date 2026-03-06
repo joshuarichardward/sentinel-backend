@@ -752,27 +752,42 @@ async function fetchLivePrices() {
     }
   } catch {}
 
-  // ── FOREX via Yahoo Finance (reliable, no rate limit) ────────────────────
+  // ── FOREX via exchangerate-api.com (free, no key, reliable) ─────────────
+  // Fetches all rates relative to USD in one call, then derives cross pairs
   const forexAssets = UNIVERSE.filter(a => a.type === "forex");
-  const yahooForexMap = {
-    "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X",
-    "AUDUSD": "AUDUSD=X", "USDCAD": "CAD=X",    "USDCHF": "CHF=X",
-    "NZDUSD": "NZDUSD=X", "GBPJPY": "GBPJPY=X", "EURGBP": "EURGBP=X",
-    "EURJPY": "EURJPY=X", "CADJPY": "CADJPY=X", "USDTRY": "TRY=X",
-    "USDZAR": "ZAR=X",    "USDMXN": "MXN=X",
-  };
-  const yahooToForexId = Object.fromEntries(Object.entries(yahooForexMap).map(([k,v]) => [v,k]));
   try {
-    const forexSyms = forexAssets.map(a => yahooForexMap[a.id]).filter(Boolean).join(",");
-    const yhHeaders = { "User-Agent": "Mozilla/5.0", "Accept": "application/json" };
     const r = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${forexSyms}&fields=regularMarketPrice`,
-      { headers: yhHeaders, signal: AbortSignal.timeout(8000) }
+      'https://open.er-api.com/v6/latest/USD',
+      { signal: AbortSignal.timeout(8000) }
     );
     const d = await r.json();
-    for (const q of (d?.quoteResponse?.result || [])) {
-      const id = yahooToForexId[q.symbol];
-      if (id && q.regularMarketPrice > 0) prices[id] = q.regularMarketPrice;
+    if (d.result === 'success' && d.rates) {
+      const rates = d.rates; // All rates relative to USD
+
+      // Helper: get price for a pair given base/quote
+      const getRate = (base, quote) => {
+        if (base === 'USD') return rates[quote] ? 1 / rates[quote] : null;
+        if (quote === 'USD') return rates[base] || null;
+        // Cross rate: base/quote = (USD/quote) / (USD/base)
+        if (rates[base] && rates[quote]) return rates[quote] / rates[base];
+        return null;
+      };
+
+      // Map our asset IDs to base/quote currencies
+      const pairMap = {
+        "EURUSD": ["EUR","USD"], "GBPUSD": ["GBP","USD"], "USDJPY": ["USD","JPY"],
+        "AUDUSD": ["AUD","USD"], "USDCAD": ["USD","CAD"], "USDCHF": ["USD","CHF"],
+        "NZDUSD": ["NZD","USD"], "GBPJPY": ["GBP","JPY"], "EURGBP": ["EUR","GBP"],
+        "EURJPY": ["EUR","JPY"], "CADJPY": ["CAD","JPY"], "USDTRY": ["USD","TRY"],
+        "USDZAR": ["USD","ZAR"], "USDMXN": ["USD","MXN"],
+      };
+
+      for (const asset of forexAssets) {
+        const pair = pairMap[asset.id];
+        if (!pair) continue;
+        const rate = getRate(pair[0], pair[1]);
+        if (rate && rate > 0) prices[asset.id] = parseFloat(rate.toFixed(6));
+      }
     }
   } catch {}
 
