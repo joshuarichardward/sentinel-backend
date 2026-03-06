@@ -764,11 +764,12 @@ async function fetchLivePrices() {
     if (d.result === 'success' && d.rates) {
       const rates = d.rates; // All rates relative to USD
 
-      // Helper: get price for a pair given base/quote
+      // rates[X] = how many X per 1 USD (e.g. rates.AUD = 1.42 means 1 USD = 1.42 AUD)
+      // To get price of base/quote (e.g. AUD/USD = how many USD per 1 AUD):
       const getRate = (base, quote) => {
-        if (base === 'USD') return rates[quote] ? 1 / rates[quote] : null;
-        if (quote === 'USD') return rates[base] || null;
-        // Cross rate: base/quote = (USD/quote) / (USD/base)
+        if (base === 'USD') return rates[quote] ? rates[quote] : null;       // USD/JPY = rates.JPY
+        if (quote === 'USD') return rates[base] ? 1 / rates[base] : null;   // AUD/USD = 1/rates.AUD
+        // Cross rate e.g. GBP/JPY = (1/rates.GBP) * rates.JPY
         if (rates[base] && rates[quote]) return rates[quote] / rates[base];
         return null;
       };
