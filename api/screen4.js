@@ -67,7 +67,84 @@ const UNIVERSE = [
   { id:"AFRM",    name:"Affirm",          sector:"Fintech",       type:"stock",  vol:0.07,   base:44      },
   { id:"TSLA",    name:"Tesla",           sector:"EV",            type:"stock",  vol:0.05,   base:285     },
   { id:"HOOD",    name:"Robinhood",       sector:"Fintech",       type:"stock",  vol:0.06,   base:38      },
+  // OPTIONS — Black-Scholes priced calls on high-vol underlyings
+  { id:"NVDA_C",  name:"NVDA Calls",      sector:"Options",       type:"option", vol:0.65,   base:118,    strike:125,  expDays:7,   underlying:"NVDA" },
+  { id:"TSLA_C",  name:"TSLA Calls",      sector:"Options",       type:"option", vol:0.72,   base:285,    strike:295,  expDays:5,   underlying:"TSLA" },
+  { id:"PLTR_C",  name:"PLTR Calls",      sector:"Options",       type:"option", vol:0.68,   base:82,     strike:87,   expDays:7,   underlying:"PLTR" },
+  { id:"MSTR_C",  name:"MSTR Calls",      sector:"Options",       type:"option", vol:0.90,   base:295,    strike:315,  expDays:3,   underlying:"MSTR" },
+  { id:"COIN_C",  name:"COIN Calls",      sector:"Options",       type:"option", vol:0.75,   base:195,    strike:210,  expDays:7,   underlying:"COIN" },
 ];
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLACK-SCHOLES OPTIONS PRICING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Cumulative normal distribution (Hart approximation)
+function normCDF(x) {
+  const a1 =  0.254829592, a2 = -0.284496736, a3 =  1.421413741;
+  const a4 = -1.453152027, a5 =  1.061405429, p  =  0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  x = Math.abs(x) / Math.sqrt(2);
+  const t = 1.0 / (1.0 + p * x);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return 0.5 * (1.0 + sign * y);
+}
+
+// Black-Scholes call price
+// S = spot, K = strike, T = time to expiry (years), r = risk-free rate, sigma = IV
+function blackScholesCall(S, K, T, r, sigma) {
+  if (T <= 0) return Math.max(0, S - K);
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  return S * normCDF(d1) - K * Math.exp(-r * T) * normCDF(d2);
+}
+
+// Black-Scholes put price
+function blackScholesPut(S, K, T, r, sigma) {
+  if (T <= 0) return Math.max(0, K - S);
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  return K * Math.exp(-r * T) * normCDF(-d2) - S * normCDF(-d1);
+}
+
+// Price an option signal using Black-Scholes
+// Returns { entry, target, stop, upside, rr }
+function priceOptionSignal(asset, liveSpot, direction) {
+  const S      = liveSpot || asset.base;
+  const K      = asset.strike;
+  const T      = asset.expDays / 365;
+  const r      = 0.053;          // ~5.3% risk-free rate (current Fed funds)
+  const sigma  = asset.vol;      // IV stored on asset
+  const isCall = direction === "L"; // Long signal = buy calls, Short = buy puts
+
+  const entryPrice = isCall
+    ? blackScholesCall(S, K, T, r, sigma)
+    : blackScholesPut(S, K, T, r, sigma);
+
+  if (entryPrice < 0.01) return null; // Too far OTM — skip
+
+  // Target: spot moves 8% favourably → recalculate BS price
+  const spotsUp   = isCall ? S * 1.08 : S * 0.92;
+  const targetPrice = isCall
+    ? blackScholesCall(spotsUp, K, T * 0.5, r, sigma * 1.1)  // IV crush on move
+    : blackScholesPut(spotsUp, K, T * 0.5, r, sigma * 1.1);
+
+  // Stop: spot moves 4% against → 50% of premium lost (standard options stop)
+  const stopPrice = entryPrice * 0.5;
+
+  const upsidePct = Math.round((targetPrice - entryPrice) / entryPrice * 100);
+  const rrRatio   = parseFloat(((targetPrice - entryPrice) / (entryPrice - stopPrice)).toFixed(1));
+
+  return {
+    entry:      parseFloat(entryPrice.toFixed(3)),
+    target:     parseFloat(targetPrice.toFixed(3)),
+    stop:       parseFloat(stopPrice.toFixed(3)),
+    upside:     Math.max(10, Math.min(500, upsidePct)),
+    riskReward: Math.max(0.5, rrRatio),
+    iv:         Math.round(sigma * 100),
+  };
+}
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -719,6 +796,53 @@ export async function handler(req) {
   const seen    = new Set(); // key: assetId-direction-timeframe (one signal per combo)
 
   for (const asset of UNIVERSE) {
+    // ── OPTIONS: price using Black-Scholes instead of bar analysis ────────
+    if (asset.type === "option") {
+      // Find live price of underlying stock
+      const underlyingPrice = livePrices[asset.underlying] || asset.base;
+
+      for (const dir of ["L", "S"]) {
+        const key = `${asset.id}-${dir}-Daily`;
+        if (seen.has(key)) continue;
+
+        const priced = priceOptionSignal(asset, underlyingPrice, dir);
+        if (!priced) continue;
+
+        // Only surface calls (L) unless underlying is in downtrend
+        if (dir === "S" && underlyingPrice >= asset.base * 0.95) continue;
+
+        seen.add(key);
+        signals.push({
+          id:           `${asset.id}-${dir}-Daily-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+          tid:          asset.id,
+          name:         dir === "L" ? asset.name : asset.name.replace("Calls","Puts"),
+          instrument:   `${asset.sector} · OPTION · Daily`,
+          tier:         3,
+          direction:    dir,
+          entry:        priced.entry,
+          target:       priced.target,
+          stop:         priced.stop,
+          upside:       priced.upside,
+          riskReward:   priced.riskReward,
+          confidence:   Math.min(85, 55 + Math.round(priced.iv * 0.2)),
+          catalystScore: 8,
+          timeToTarget: `${asset.expDays}d expiry`,
+          catalysts:    [
+            `IV: ${priced.iv}%  ·  Strike: $${asset.strike}  ·  Underlying: $${underlyingPrice.toFixed(2)}`,
+            `Black-Scholes priced ${dir === "L" ? "call" : "put"} — ${asset.expDays}-day expiry`,
+          ],
+          edgeScore:    75,
+          theoryCount:  2,
+          timeframe:    "Daily",
+          sector:       asset.sector,
+          type:         "option",
+          assetType:    "option",
+        });
+      }
+      continue; // skip bar analysis for options
+    }
+
+    // ── STANDARD ASSETS: bar-based signal analysis ────────────────────────
     const livePrice = livePrices[asset.id] || null;
     const base      = livePrice || asset.base;
     const dBars     = makeBars(base, asset.vol, 30);
